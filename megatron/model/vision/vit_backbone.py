@@ -16,7 +16,7 @@ from megatron.model.utils import (
 )
 from megatron.model.module import MegatronModule
 
-CLASS_TOKEN_LENGTH = 8
+CLASS_TOKEN_LENGTH = 1 # 8 ## represents number of tasks
 
 class VitMlpHead(MegatronModule):
     """Pooler layer.
@@ -196,6 +196,7 @@ class VitBackbone(MegatronModule):
         # Transformer
         self.transformer = ParallelTransformer(
             config,
+            model_type=args.model_type, ## Added agnostic model type argument
             pre_process=self.pre_process,
             post_process=self.post_process,
             post_layer_norm=self.post_layer_norm,
@@ -207,7 +208,6 @@ class VitBackbone(MegatronModule):
         self.transformer.set_input_tensor(input_tensor)
 
     def forward(self, input):
-
         if self.pre_process:
             rearranged_input = einops.rearrange(
                 input,
@@ -232,11 +232,10 @@ class VitBackbone(MegatronModule):
         else:
             hidden_states = input
 
-        hidden_states = self.transformer(hidden_states, None)
-
+        hidden_states = self.transformer(hidden_states, None)[0] ## [0] because hidden_states, moe_losses, and moe_losses are not used. Q. When would it? 
         if self.post_process:
             # [s b h] => [b s h]
-            if self.single_token_output:
+            if self.single_token_output: ##Q. How would one handle when single_token is off?
                 hidden_states = hidden_states[0]
             else:
                 hidden_states = hidden_states.transpose(0, 1).contiguous()

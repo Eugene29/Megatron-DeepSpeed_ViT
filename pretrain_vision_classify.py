@@ -1,6 +1,9 @@
 # Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain VIT"""
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+comm.Barrier()
 
 import torch
 import torch.nn.functional as F
@@ -95,6 +98,13 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
 
 if __name__ == "__main__":
+    import ezpz as ez
+    RANK = ez.setup_torch(backend="deepspeed")#, timeout=72000) ## 20 hours max.
+    WORLD_SIZE = ez.get_world_size()
+    LOCAL_RANK = ez.get_local_rank()
+    DEVICE_TYPE = ez.dist.get_torch_device_type()
+    if torch.cuda.is_available():
+        torch.cuda.set_device(LOCAL_RANK)
 
     pretrain(
         train_valid_test_datasets_provider,
@@ -103,3 +113,5 @@ if __name__ == "__main__":
         forward_step,
         args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
     )
+    print("Pretrain completed.")
+    exit()

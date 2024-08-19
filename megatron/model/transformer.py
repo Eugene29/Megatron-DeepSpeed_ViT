@@ -602,6 +602,7 @@ class ParallelAttention(MegatronModule):
         if self.enable_ds_sequence_parallel:
             assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
             assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
+            print("You have enabled Seq Parallel")
             self.dist_attn = DistributedAttention(
                 local_attn, 
                 parallel_state.get_sequence_parallel_group(), 

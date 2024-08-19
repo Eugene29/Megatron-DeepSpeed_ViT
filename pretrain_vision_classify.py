@@ -1,12 +1,16 @@
 # Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain VIT"""
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+comm.Barrier()
 
 import torch
 import torch.nn.functional as F
 from functools import partial
 from megatron import get_args, get_timers, print_rank_0
 from megatron.core.enums import ModelType
+from megatron.core import parallel_state, tensor_parallel
 from megatron.data.vit_dataset import build_train_valid_datasets
 from megatron.model.vision.classification import VitClassificationModel
 from megatron.model.vision.classification import MitClassificationModel
@@ -38,15 +42,30 @@ def model_provider(pre_process=True, post_process=True):
 
 
 def get_batch(data_iterator):
-    """Build the batch."""
-    data = next(data_iterator)
+    """Generate a batch.
 
-    # only data parallelism; no need for broadcast
-    images = data[0].cuda()
-    labels = data[1].cuda()
+    Args:
+        data_iterator: Iterable dataset.
+
+    Returns:
+        sample: A data sample with images, tokens, etc.
+    """
+    # Broadcast data.
+    if data_iterator is not None:
+        data = next(data_iterator)
+        data_dict = {}
+        data_dict['image'] = data[0]
+        data_dict['label'] = data[1]
+    else:
+        data_dict = None
+
+    data_i = tensor_parallel.broadcast_data(["label"], data_dict, torch.int64) ##TODO: lower precision
+    data_f = tensor_parallel.broadcast_data(["image"], data_dict, torch.float16)
+
+    labels = data_i["label"].long()
+    images = data_f["image"]
 
     return images, labels
-
 
 def loss_func(labels, output_tensor):
     logits = output_tensor.contiguous().float()
@@ -95,6 +114,13 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
 
 if __name__ == "__main__":
+    import ezpz as ez
+    RANK = ez.setup_torch(backend="deepspeed")#, timeout=72000) ## 20 hours max.
+    WORLD_SIZE = ez.get_world_size()
+    LOCAL_RANK = ez.get_local_rank()
+    DEVICE_TYPE = ez.dist.get_torch_device_type()
+    if torch.cuda.is_available():
+        torch.cuda.set_device(LOCAL_RANK)
 
     pretrain(
         train_valid_test_datasets_provider,
@@ -103,3 +129,5 @@ if __name__ == "__main__":
         forward_step,
         args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
     )
+    print("Pretrain completed.")
+    exit()

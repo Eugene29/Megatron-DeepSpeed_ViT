@@ -15,7 +15,7 @@ class VitClassificationModel(MegatronModule):
 
     def __init__(self, config, num_classes, finetune=False,
                  pre_process=True, post_process=True):
-        super(VitClassificationModel, self).__init__()
+        super(VitClassificationModel, self).__init__(config=config) ## add config to the model.
         args = get_args()
 
         self.hidden_size = args.hidden_size
@@ -50,7 +50,7 @@ class VitClassificationModel(MegatronModule):
 
         if self.post_process:
             hidden_states = self.head(hidden_states)
-
+        hidden_states = hidden_states[:, 0, :] ## extract the first token (clf token)
         return hidden_states
 
 

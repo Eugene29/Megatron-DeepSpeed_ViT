@@ -16,7 +16,7 @@ from megatron.model.utils import (
 )
 from megatron.model.module import MegatronModule
 
-CLASS_TOKEN_LENGTH = 8
+CLASS_TOKEN_LENGTH = 1 # 8
 
 class VitMlpHead(MegatronModule):
     """Pooler layer.
@@ -196,6 +196,7 @@ class VitBackbone(MegatronModule):
         # Transformer
         self.transformer = ParallelTransformer(
             config,
+            model_type=args.model_type, ## Added agnostic model type argument
             pre_process=self.pre_process,
             post_process=self.post_process,
             post_layer_norm=self.post_layer_norm,
@@ -207,7 +208,6 @@ class VitBackbone(MegatronModule):
         self.transformer.set_input_tensor(input_tensor)
 
     def forward(self, input):
-
         if self.pre_process:
             rearranged_input = einops.rearrange(
                 input,
@@ -233,13 +233,11 @@ class VitBackbone(MegatronModule):
             hidden_states = input
 
         hidden_states = self.transformer(hidden_states, None)
-
         if self.post_process:
             # [s b h] => [b s h]
-            if self.single_token_output:
+            if self.single_token_output: ##Q. When would non_single_token_output be useful?
                 hidden_states = hidden_states[0]
-            else:
-                hidden_states = hidden_states.transpose(0, 1).contiguous()
+            hidden_states = hidden_states.transpose(0, 1).contiguous() ## Should always transpose back. 
 
         return hidden_states
 

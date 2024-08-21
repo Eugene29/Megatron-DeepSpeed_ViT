@@ -1,21 +1,26 @@
 #! /bin/bash
 
+## ENVIRONMENT
 echo "Launching Environment."
-# module load conda && conda activate base && . ~/venv/eugene/bin/activate
 module load conda && conda activate base && . ~/venv/aevard/bin/activate
 
+
+## PYTHONPATH
+SCRIPT_DIR=$(dirname $0)
+echo "Script Directory: ${SCRIPT_DIR}"
 PYTHONPATH=$og_PYTHONPATH
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Adding MEGATRON to pypath
 
-## Recent Megatron
-export PYTHONPATH="${HOME}/polaris/Megatron-DeepSpeed_DP:${PYTHONPATH}"
-
+## HOST NODE
 echo "Exporting and sourcing other scripts."
 export MASTER_ADDR=localhost
 export MASTER_PORT=6000
 
-SCRIPT_DIR="${HOME}/polaris/Megatron-DeepSpeed_DP"
-echo "Script Directory: ${SCRIPT_DIR}"
+## ARGUMENTS
+echo "Running argument setup."
 source "${SCRIPT_DIR}/mds_args.sh"
+ds_json=${SCRIPT_DIR}/ds_stage1_mb2_gb32_pp1_fp16.json
+export MICRO_BATCH=$(jq -r '.train_micro_batch_size_per_gpu' $ds_json)
 
 # Pre-trains ViT based image classificaation model
 export CUDA_DEVICE_MAX_CONNECTIONS=1

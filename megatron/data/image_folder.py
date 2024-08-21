@@ -215,7 +215,14 @@ class DatasetFolder(VisionDataset):
         for x in range(self.total):
             try:
                 path, target = self.samples[curr_index]
-                sample = self.loader(path)
+                # sample = self.loader(path)
+
+                import torch
+                #### Using Toy Dataset ####
+                assert "IMG_W" in os.environ
+                w = int(os.environ["IMG_W"])
+                h = int(os.environ["IMG_H"])
+                sample = torch.randn(3, w, h, dtype=torch.float16) ## Doesn't let 92 channels
                 break
             except Exception as e:
                 curr_index = np.random.randint(0, self.total)

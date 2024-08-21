@@ -6,8 +6,10 @@ module load conda && conda activate base && . ~/venv/aevard/bin/activate
 
 
 ## PYTHONPATH
+SCRIPT_DIR=$(dirname $0)
+echo "Script Directory: ${SCRIPT_DIR}"
 PYTHONPATH=$og_PYTHONPATH
-export PYTHONPATH="${HOME}/polaris/mds_DP_SP/Megatron-DeepSpeed:${PYTHONPATH}" ## MEGATRON
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Adding MEGATRON to pypath
 
 ## HOST NODE
 echo "Exporting and sourcing other scripts."
@@ -16,8 +18,6 @@ export MASTER_PORT=6000
 
 ## ARGUMENTS
 echo "Running argument setup."
-SCRIPT_DIR="${HOME}/polaris/mds_DP_SP"
-echo "Script Directory: ${SCRIPT_DIR}"
 source "${SCRIPT_DIR}/mds_args.sh"
 ds_json=${SCRIPT_DIR}/ds_stage1_mb2_gb32_pp1_fp16.json
 export MICRO_BATCH=$(jq -r '.train_micro_batch_size_per_gpu' $ds_json)
@@ -92,7 +92,7 @@ echo "${DS_ARGS}"
 echo "Launching mpiexec."
 mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
      --cpu-bind depth -d 16 python \
-     ${SCRIPT_DIR}/Megatron-DeepSpeed/pretrain_vision_classify.py \
+     ${SCRIPT_DIR}/pretrain_vision_classify.py \
      ${CLASSIFIER_ARGS} \
      ${DATA_ARGS} \
      ${OUTPUT_ARGS} \

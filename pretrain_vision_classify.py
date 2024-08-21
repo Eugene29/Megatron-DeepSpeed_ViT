@@ -59,7 +59,7 @@ def get_batch(data_iterator):
     else:
         data_dict = None
 
-    data_i = tensor_parallel.broadcast_data(["label"], data_dict, torch.int64) ##TODO: lower precision
+    data_i = tensor_parallel.broadcast_data(["label"], data_dict, torch.int64) ##TODO: lower precision, will it get angry at me if I set it to 16 or 32? 
     data_f = tensor_parallel.broadcast_data(["image"], data_dict, torch.float16)
 
     labels = data_i["label"].long()

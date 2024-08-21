@@ -50,7 +50,6 @@ class VitClassificationModel(MegatronModule):
 
         if self.post_process:
             hidden_states = self.head(hidden_states)
-        hidden_states = hidden_states[:, 0, :] ## extract the first token (clf token)
         return hidden_states
 
 

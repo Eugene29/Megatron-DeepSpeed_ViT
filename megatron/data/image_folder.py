@@ -160,6 +160,10 @@ class DatasetFolder(VisionDataset):
                                     self.data_per_class_fraction,
                                     extensions,
                                     is_valid_file)
+        # print(f"loader: {loader}")
+        # print(f"samples: {samples}")
+        # raise KeyError("break")
+        
         if len(samples) == 0:
             msg = "Found 0 files in subfolders of: {}\n".format(self.root)
             if extensions is not None:
@@ -214,8 +218,14 @@ class DatasetFolder(VisionDataset):
         curr_index = index
         for x in range(self.total):
             try:
+                import torch
                 path, target = self.samples[curr_index]
-                sample = self.loader(path)
+                # sample = self.loader(path)
+                #### Using Toy Dataset ####
+                assert "IMG_W" in os.environ
+                w = int(os.environ["IMG_W"])
+                h = int(os.environ["IMG_H"])
+                sample = torch.randn(3, w, h, dtype=torch.float16) ## Doesn't let 92 channels
                 break
             except Exception as e:
                 curr_index = np.random.randint(0, self.total)

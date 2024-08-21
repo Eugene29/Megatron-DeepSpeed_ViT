@@ -9,6 +9,7 @@ import apex
 import torch.nn.functional as F
 from megatron import get_args
 from megatron.model.transformer import ParallelTransformer
+from megatron.core import parallel_state as mpu
 from megatron.model.utils import (
     get_linear_layer,
     init_method_normal,
@@ -153,9 +154,11 @@ class VitBackbone(MegatronModule):
         self.micro_batch_size = args.micro_batch_size
         self.single_token_output = single_token_output
         self.drop_path_rate = drop_path_rate
+        ## sequence parallelism
+        self.ds_sequence_parallel = args.ds_sequence_parallel_size > 1
 
-        assert self.img_h % self.patch_dim == 0
-        assert self.img_w % self.patch_dim == 0
+        assert self.img_h % self.patch_dim == 0, f"img_h:, {self.img_h}, patch_dim: {self.patch_dim}"
+        assert self.img_w % self.patch_dim == 0, f"img_w:, {self.img_w}, patch_dim: {self.patch_dim}"
         self.num_patches_per_dim_h = self.img_h // self.patch_dim
         self.num_patches_per_dim_w = self.img_w // self.patch_dim
         self.num_patches = self.num_patches_per_dim_h * self.num_patches_per_dim_w
@@ -196,7 +199,7 @@ class VitBackbone(MegatronModule):
         # Transformer
         self.transformer = ParallelTransformer(
             config,
-            model_type=args.model_type, ## Added agnostic model type argument
+            model_type=args.model_type, ## Added agnostic model_type argument
             pre_process=self.pre_process,
             post_process=self.post_process,
             post_layer_norm=self.post_layer_norm,
@@ -228,16 +231,35 @@ class VitBackbone(MegatronModule):
                     self.position_embeddings(self.position_ids[:, :concatenated_tokens.shape[1]])
             # [b, s, h] => [s, b, h]
             token_embeddings = token_embeddings.transpose(0, 1).contiguous()
-            hidden_states = self.embedding_dropout(token_embeddings)
+            hidden_states = self.embedding_dropout(token_embeddings) ## TODO: should I do dropout before or after sequence splitting? 
+
+            ## For DS's sequence parallel
+            if self.ds_sequence_parallel:
+                seq_parallel_world_size = mpu.get_sequence_parallel_world_size()
+                seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
+
+                sub_seq_length = self.seq_length // seq_parallel_world_size
+                sub_seq_start = seq_parallel_world_rank * sub_seq_length
+                sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
+
+                hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
+                
+            #     print(f"sub_seq_length: {sub_seq_length}")
+            #     print(f"sub_seq_start: {sub_seq_start}")
+            #     print(f"sub_seq_end: {sub_seq_end}")
+            # raise KeyError("breaking skrrt") 
+
         else:
             hidden_states = input
 
-        hidden_states = self.transformer(hidden_states, None)
+        hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
+
         if self.post_process:
             # [s b h] => [b s h]
             if self.single_token_output: ##Q. When would non_single_token_output be useful?
                 hidden_states = hidden_states[0]
-            hidden_states = hidden_states.transpose(0, 1).contiguous() ## Should always transpose back. 
+            else:
+                hidden_states = hidden_states.transpose(0, 1).contiguous() ## Should always transpose back. 
 
         return hidden_states
 

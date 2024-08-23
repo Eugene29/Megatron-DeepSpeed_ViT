@@ -2,8 +2,8 @@
 
 ## ENVIRONMENT
 echo "Launching Environment."
-module load conda && conda activate base && . ~/venv/aevard/bin/activate
-
+# module load conda && conda activate base
+. ~/venv/eugene/bin/activate ##USER: change env accordingly
 
 ## PYTHONPATH
 SCRIPT_DIR=$(dirname $0)

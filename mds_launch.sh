@@ -20,7 +20,7 @@ export MASTER_PORT=6000
 echo "Running argument setup."
 source "${SCRIPT_DIR}/mds_args.sh"
 ds_json=${SCRIPT_DIR}/ds_stage1_mb2_gb32_pp1_fp16.json
-export MICRO_BATCH=$(jq -r '.train_micro_batch_size_per_gpu' $ds_json)
+export MICRO_BATCH=$(jq -r '.train_micro_batch_size_per_gpu' $ds_json) ## I think DS config overwrites anyway.
 
 
 # Pre-trains ViT based image classificaation model
@@ -29,9 +29,10 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1 ## ?? but you need it
 # Training and validation paths should each point to a folder where each
 # sub-folder contains a collection of images in jpg or png format
 # e.g. If using imagenet, one train image might be, train_data/n01688243/n01688243_11301.JPEG
-     # --pipeline-model-parallel-size ${PP} \
 CLASSIFIER_ARGS="
+     --use-flash-attn-v2 \
      ${no_pipeline_parallel} \
+     --pipeline-model-parallel-size ${PP} \
      --ds-sequence-parallel-size ${SP} \
      --tensor-model-parallel-size ${TP} \
      --num-layers ${NLAYERS} \
@@ -43,8 +44,8 @@ CLASSIFIER_ARGS="
      --img-h ${IMG_H} \
      --img-w ${IMG_W} \
      --num-classes ${NUM_CLASSES} \
-     --mask-factor 1.0 \
      --fp16 \
+     --mask-factor 1.0 \
      --train-iters ${TRAIN_ITERS} \
      --lr-decay-style cosine \
      --lr ${LR} \
@@ -57,7 +58,7 @@ CLASSIFIER_ARGS="
      --num-workers ${NGPUS} \
      --no-masked-softmax-fusion \
      --no-bias-dropout-fusion \
-     --micro-batch-size ${MICRO_BATCH}
+     --micro-batch-size ${MICRO_BATCH} \
 "
      # --save ./ \
      # --global-batch-size (( $MICRO_BATCH * 4 )) \
@@ -96,6 +97,7 @@ mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NO
      ${CLASSIFIER_ARGS} \
      ${DATA_ARGS} \
      ${OUTPUT_ARGS} \
-     ${DS_ARGS}
+     ${DS_ARGS} \
+     # --lr-warmup-iters 0 ##TODO: Disable later
      # --use-flash-attn-triton \
      # --use-flash-attn \

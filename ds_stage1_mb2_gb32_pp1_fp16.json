@@ -1,5 +1,5 @@
 {
-  "train_micro_batch_size_per_gpu": 4,
+  "train_micro_batch_size_per_gpu": 1,
   "steps_per_print": 9999999999,
   "gradient_accumulation_steps": 1,
   "zero_allow_untested_optimizer": true,
@@ -8,17 +8,13 @@
     "partition_activations": true,
     "contiguous_memory_optimization": true
   },
-  "wall_clock_breakdown": false,
   "communication_data_type": "fp16",
   "fp16": {
             "enabled": true,
             "loss_scale": 0
           },
+  "wall_clock_breakdown": false,
   "logging_level": "WARNING",
-  "bfloat16": {
-            "enabled": false,
-            "loss_scale": 1.0
-            },
   "comms_logger": {
                     "enabled": true,
                     "verbose": false,

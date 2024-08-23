@@ -231,7 +231,7 @@ class VitBackbone(MegatronModule):
                     self.position_embeddings(self.position_ids[:, :concatenated_tokens.shape[1]])
             # [b, s, h] => [s, b, h]
             token_embeddings = token_embeddings.transpose(0, 1).contiguous()
-            hidden_states = self.embedding_dropout(token_embeddings) ## TODO: should I do dropout before or after sequence splitting? 
+            hidden_states = self.embedding_dropout(token_embeddings) ##TODO: should I do dropout before or after sequence splitting? 
 
             ## For DS's sequence parallel
             if self.ds_sequence_parallel:
@@ -256,7 +256,7 @@ class VitBackbone(MegatronModule):
 
         if self.post_process:
             # [s b h] => [b s h]
-            if self.single_token_output: ##Q. When would non_single_token_output be useful?
+            if self.single_token_output:
                 hidden_states = hidden_states[0]
             else:
                 hidden_states = hidden_states.transpose(0, 1).contiguous() ## Should always transpose back. 

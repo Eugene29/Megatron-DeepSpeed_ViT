@@ -518,7 +518,8 @@ class ParallelAttention(MegatronModule):
         self.use_flash_attn = (args.use_flash_attn_v1 or args.use_flash_attn_triton or args.use_flash_attn_v2 or \
             args.use_flash_attn_builder) \
             and attention_type == AttnType.self_attn \
-            and self.attn_mask_type == AttnMaskType.causal
+            and self.attn_mask_type == AttnMaskType.causal or args.vision_backbone_type is not None ## Now works with non-causal? 
+
         self.use_flash_attn_triton = args.use_flash_attn_triton
         if self.use_flash_attn:
             global flash_attn_builder
@@ -538,8 +539,9 @@ class ParallelAttention(MegatronModule):
 
             assert attention_type == AttnType.self_attn, ('FlashAttention code path only supports '
                                                           'self-attention for now')
-            assert self.attn_mask_type == AttnMaskType.causal, ('FlashAttention code path only '
-                                                                'supports causal mask for now')
+            ## I guess FlashAttention does support it now?
+            # assert self.attn_mask_type == AttnMaskType.causal, ('FlashAttention code path only '
+            #                                                     'supports causal mask for now')
             if rearrange is None:
                 raise ImportError('einops is not installed, please install with pip install einops')
 
@@ -602,7 +604,6 @@ class ParallelAttention(MegatronModule):
         if self.enable_ds_sequence_parallel:
             assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
             assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
-            print("You have enabled Seq Parallel")
             self.dist_attn = DistributedAttention(
                 local_attn, 
                 parallel_state.get_sequence_parallel_group(), 

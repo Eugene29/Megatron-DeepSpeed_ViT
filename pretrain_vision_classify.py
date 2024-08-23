@@ -10,13 +10,14 @@ import torch.nn.functional as F
 from functools import partial
 from megatron import get_args, get_timers, print_rank_0
 from megatron.core.enums import ModelType
-from megatron.core import parallel_state, tensor_parallel
+from megatron.core import parallel_state as mpu, tensor_parallel
 from megatron.data.vit_dataset import build_train_valid_datasets
 from megatron.model.vision.classification import VitClassificationModel
 from megatron.model.vision.classification import MitClassificationModel
 from megatron.training import pretrain
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.arguments import core_transformer_config_from_args
+import deepspeed
 
 
 def model_provider(pre_process=True, post_process=True):
@@ -24,20 +25,34 @@ def model_provider(pre_process=True, post_process=True):
 
     args = get_args()
     config = core_transformer_config_from_args(args)
-    if args.vision_backbone_type == 'vit':
-        print_rank_0("building VIT model ...")
-        model = VitClassificationModel(config=config,
-                                       num_classes=args.num_classes,
-                                       pre_process=pre_process,
-                                       post_process=post_process)
-    elif args.vision_backbone_type == 'mit':
-        print_rank_0("building MIT model ...")
-        model = MitClassificationModel(num_classes=args.num_classes,
-                                       pre_process=pre_process,
-                                       post_process=post_process)
+
+    ## Trying to see if this helps SP...
+    if hasattr(mpu, 'get_sequence_data_parallel_group'):
+        dpg = mpu.get_sequence_data_parallel_group()
+    elif hasattr(mpu, 'get_data_parallel_group'):
+        dpg = mpu.get_data_parallel_group()
     else:
-        raise Exception('{} vision backbone is not supported.'.format(
-                              args.vision_backbone_type))
+        dpg = None
+    with deepspeed.zero.Init(data_parallel_group=dpg,
+                            remote_device=None if args.remote_device == 'none' else args.remote_device,
+                            config_dict_or_path=args.deepspeed_config_dict,
+                            enabled=args.zero_stage == 3,
+                            mpu=mpu):
+        ##TODO: enable PP here. 
+        if args.vision_backbone_type == 'vit':
+            print_rank_0("building VIT model ...")
+            model = VitClassificationModel(config=config,
+                                        num_classes=args.num_classes,
+                                        pre_process=pre_process,
+                                        post_process=post_process)
+        elif args.vision_backbone_type == 'mit':
+            print_rank_0("building MIT model ...")
+            model = MitClassificationModel(num_classes=args.num_classes,
+                                        pre_process=pre_process,
+                                        post_process=post_process)
+        else:
+            raise Exception('{} vision backbone is not supported.'.format(
+                                args.vision_backbone_type))
     return model
 
 
@@ -60,7 +75,7 @@ def get_batch(data_iterator):
         data_dict = None
 
     data_i = tensor_parallel.broadcast_data(["label"], data_dict, torch.int64) ##TODO: lower precision, will it get angry at me if I set it to 16 or 32? 
-    data_f = tensor_parallel.broadcast_data(["image"], data_dict, torch.float16)
+    data_f = tensor_parallel.broadcast_data(["image"], data_dict, torch.float16) ## images are in fp16
 
     labels = data_i["label"].long()
     images = data_f["image"]

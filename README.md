@@ -1,5 +1,5 @@
 ## Welcome to ALCF ViT repo. 
-Users will have lines with a comment "##USER:". You can use Github search to find em. 
+Users will have to edit lines with a comment "##USER:". You can use Github search to find em. 
 
 ## Environment
 You'll need: Base environment + ezpz (sam's)

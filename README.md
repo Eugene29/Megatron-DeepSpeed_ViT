@@ -1,4 +1,4 @@
-## Welcome to Eugene's ViT repo. 
+## Welcome to ALCF ViT repo. 
 Users will have lines with a comment "##USER:". You can use Github search to find em. 
 
 ## Environment

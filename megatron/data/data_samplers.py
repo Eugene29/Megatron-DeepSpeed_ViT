@@ -180,6 +180,21 @@ class MegatronPretrainingRandomSampler:
             idx_range_active = idx_range_total[full_bucket_offset:]
             idx_range = idx_range_active[self.data_parallel_rank::self.data_parallel_size]
 
+        # print(f"dataset: {self.dataset}")
+        # print(f"total_samples: {self.total_samples}")
+        # print(f"consumed_samples: {self.consumed_samples}")
+        # print(f"micro_batch_size: {self.micro_batch_size}")
+        # print(f"data_parallel_rank: {self.data_parallel_rank}")
+        # print(f"data_parallel_size: {self.data_parallel_size}")
+        # print(f"data_sharding: {self.data_sharding}")
+        # print(f"This part is initialized twice for some reason?")
+        # print(f"dataset size: {len(idx_range)}")
+        # print(f"full_bucket_size: {full_bucket_size}")
+        # print(f"full_bucket_offset: {full_bucket_offset}")
+        # print(f"epoch: {self.epoch}")
+        # ##NOTE: There is a difference in idx_range
+        # breakpoint()
+
         batch = []
         # Last batch if not complete will be dropped.
         for idx in idx_range:

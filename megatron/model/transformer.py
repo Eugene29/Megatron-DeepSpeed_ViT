@@ -399,7 +399,8 @@ class FlashSelfAttention(torch.nn.Module):
             self.flash_attn_func = flash_attn_varlen_func if args.use_flash_attn_v2 else flash_attn_unpadded_func
             self.use_flash_attn = True
 
-    def forward(self, q, k, v):
+    ## Add bathc_dim_idx as it is inputted later on. 
+    def forward(self, q, k, v, batch_dim_idx):
         """Implements the multihead softmax attention.
         Arguments
         ---------
@@ -411,6 +412,10 @@ class FlashSelfAttention(torch.nn.Module):
 
         batch_size, seqlen_q = q.shape[0], q.shape[1]
         seqlen_k = k.shape[1]
+
+        ## Transpose batch_dim depending on batch_dim_idx. We want batch_dim on dim=0 always. 
+        if batch_dim_idx == 1:
+            q, k, v = q.transpose(0, 1).contiguous(), q.transpose(0, 1).contiguous(), q.transpose(0, 1).contiguous()
 
         if self.use_flash_attn:
             q, k, v = [rearrange(x, 'b s ... -> (b s) ...') for x in [q, k, v]]
@@ -518,7 +523,7 @@ class ParallelAttention(MegatronModule):
         self.use_flash_attn = (args.use_flash_attn_v1 or args.use_flash_attn_triton or args.use_flash_attn_v2 or \
             args.use_flash_attn_builder) \
             and attention_type == AttnType.self_attn \
-            and self.attn_mask_type == AttnMaskType.causal or args.vision_backbone_type is not None ## Now works with non-causal? 
+            and (self.attn_mask_type == AttnMaskType.causal or args.vision_backbone_type is not None) ## Bypass non-causal mask assert for ViT's. 
 
         self.use_flash_attn_triton = args.use_flash_attn_triton
         if self.use_flash_attn:
@@ -539,7 +544,7 @@ class ParallelAttention(MegatronModule):
 
             assert attention_type == AttnType.self_attn, ('FlashAttention code path only supports '
                                                           'self-attention for now')
-            ## I guess FlashAttention does support it now?
+            # Bypass non-causal mask assert for ViT's. 
             # assert self.attn_mask_type == AttnMaskType.causal, ('FlashAttention code path only '
             #                                                     'supports causal mask for now')
             if rearrange is None:
@@ -606,7 +611,7 @@ class ParallelAttention(MegatronModule):
             assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
             self.dist_attn = DistributedAttention(
                 local_attn, 
-                parallel_state.get_sequence_parallel_group(), 
+                parallel_state.get_sequence_parallel_group(), ## group that needs to communicate together. (if 1, then it communicates with other devices in 1)
                 gather_idx=1 if args.use_flash_attn_v1 or args.use_flash_attn_v2 else 0) 
             # flash_attn_cuda assumes [b, s, nh, hd] layout, we need to make sure all2all gathers into the correct sequence dimension.
         else:
@@ -925,7 +930,7 @@ class ParallelTransformerLayer(MegatronModule):
                     config.hidden_size,
                     eps=config.layernorm_epsilon,
                     no_persist_layer_norm=args.no_persist_layer_norm,
-                    sequence_parallel=config.sequence_parallel,
+                    sequence_parallel=config.sequence_parallel, ##LayerNorm class inherently takes care of seq parallel layer normalization.
                     apply_layernorm_1p=args.apply_layernorm_1p,
                     mem_efficient_ln=args.mem_efficient_ln)
             else:
@@ -1290,7 +1295,7 @@ class ParallelTransformerLayer(MegatronModule):
                     residual,
                     self.hidden_dropout)
         else:
-            out = torch.nn.functional.dropout(attention_output + attention_bias,
+            out = torch.nn.functional.dropout(attention_output + attention_bias, ##Q. What is attention bias? Doesn't dense layer have bias?
                                               p=self.hidden_dropout,
                                               training=self.training)
             layernorm_input = residual + self.drop_path(out)
@@ -2048,6 +2053,9 @@ class ParallelTransformer(MegatronModule):
             #     # Reverting data format change [s b h] --> [b s h].
             #     hidden_states = hidden_states.transpose(0, 1).contiguous()
             hidden_states = self.final_layernorm(hidden_states)
+        
+        # from megatron import print_rank_0
+        # print_rank_0(f"final hidden state before head: {hidden_states.shape}")
 
         return (hidden_states, *moe_losses)
 

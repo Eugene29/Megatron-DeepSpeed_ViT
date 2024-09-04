@@ -231,9 +231,19 @@ class VitBackbone(MegatronModule):
                     self.position_embeddings(self.position_ids[:, :concatenated_tokens.shape[1]])
             # [b, s, h] => [s, b, h]
             token_embeddings = token_embeddings.transpose(0, 1).contiguous()
-            hidden_states = self.embedding_dropout(token_embeddings) ##TODO: should I do dropout before or after sequence splitting? 
+            hidden_states = self.embedding_dropout(token_embeddings) 
+            ##TODO: Possible Throughput Gains in the Future
+            ##1. Could run preprocess first on rank 0, using torch.barrier(), try tensor_parallel for boradcasting
+            ##2. Should I do dropout before or after sequence splitting? 
+            ##3. Even better, I could split before linear encoding or before patchifying.
+            ##NOTE: Priming DS Seq. Parallelism by splitting [s, b, h] -> [s/sp, b, h]
 
-            ## For DS's sequence parallel
+            ##TODO: (CRITICAL) Don't we need to use sequence_data_parallel? However, sequence_data_parallel is just ddp? 
+            # args = get_args()
+            # print(f"rank: {args.rank}")
+            # print(f"get_sequence_parallel_rank: {mpu.get_sequence_parallel_rank()}")
+            # print(f"get_sequence_data_parallel_rank: {mpu.get_sequence_data_parallel_rank()}")
+            
             if self.ds_sequence_parallel:
                 seq_parallel_world_size = mpu.get_sequence_parallel_world_size()
                 seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
@@ -243,16 +253,24 @@ class VitBackbone(MegatronModule):
                 sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
 
                 hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
-                
-            #     print(f"sub_seq_length: {sub_seq_length}")
-            #     print(f"sub_seq_start: {sub_seq_start}")
-            #     print(f"sub_seq_end: {sub_seq_end}")
-            # raise KeyError("breaking skrrt") 
-
         else:
             hidden_states = input
 
         hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
+
+        ##NOTE: This seems like a pointless thing to do because you are going to extract the first token only anyway.
+        # from megatron import get_args
+        # from megatron.core import tensor_parallel
+        # args = get_args()
+        # print(f"before, rank: {args.rank} \n hidden_states.shape: {hidden_states.shape}")
+        # hidden_states = tensor_parallel.gather_from_sequence_parallel_region(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
+        # print(f"after, rank: {args.rank} \n {_gather_along_first_dim(hidden_states).shape}")
+        # torch.distributed.breakpoint()
+        # print(f"mpu.get_sequence_parallel_rank: {mpu.get_sequence_parallel_rank}")
+        
+        ## only extract the clf token in the end.
+        # if mpu.get_sequence_parallel_rank != 0:
+        #     return None
 
         if self.post_process:
             # [s b h] => [b s h]
@@ -262,4 +280,3 @@ class VitBackbone(MegatronModule):
                 hidden_states = hidden_states.transpose(0, 1).contiguous() ## Should always transpose back. 
 
         return hidden_states
-

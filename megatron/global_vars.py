@@ -166,9 +166,15 @@ def _set_wandb_writer(args):
     _ensure_var_is_not_initialized(_GLOBAL_WANDB_WRITER,
                                    'wandb writer')
     getattr(args, 'wandb_project', '')
-    getattr(args, 'wandb_exp_name', '')
+    ## Name WandB experiment with current CT time. 
+    from datetime import datetime
+    import pytz
+    ct = pytz.timezone('America/Chicago')
+    args.wandb_exp_name = datetime.now(ct).strftime("%Y-%m-%d_%I:%M_%p")
 
-    if args.rank == (args.world_size - 1):
+    ## Using args.world_size - 1 causes it to hang. Interesting case.. I wonder why
+    # if args.rank == (args.world_size - 1):
+    if args.rank == 0:
         if args.wandb_project == '' or \
             args.wandb_exp_name == '':
             print('WARNING: WANDB writing requested but no legit wandb '

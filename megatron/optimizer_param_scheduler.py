@@ -27,7 +27,7 @@ class OptimizerParamScheduler(object):
         self.num_steps = 0
         self.lr_decay_steps = lr_decay_steps
         assert self.lr_decay_steps > 0
-        assert self.lr_warmup_steps < self.lr_decay_steps
+        assert self.lr_warmup_steps < self.lr_decay_steps, f"self.lr_warmup_steps: {self.lr_warmup_steps} \n self.lr_decay_steps: {self.lr_decay_steps}"
 
         self.lr_decay_tokens = args.lr_decay_tokens
         self.num_tokens = 0

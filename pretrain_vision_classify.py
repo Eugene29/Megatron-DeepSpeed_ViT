@@ -18,41 +18,45 @@ from megatron.training import pretrain
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.arguments import core_transformer_config_from_args
 import deepspeed
-
+# from deepspeed.runtime.utils import see_memory_usage
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
 
     args = get_args()
     config = core_transformer_config_from_args(args)
+    # see_memory_usage(f"Before Building Model", force=True)
 
-    ## Trying to see if this helps SP...
-    if hasattr(mpu, 'get_sequence_data_parallel_group'):
-        dpg = mpu.get_sequence_data_parallel_group()
-    elif hasattr(mpu, 'get_data_parallel_group'):
-        dpg = mpu.get_data_parallel_group()
-    else:
-        dpg = None
-    with deepspeed.zero.Init(data_parallel_group=dpg,
-                            remote_device=None if args.remote_device == 'none' else args.remote_device,
-                            config_dict_or_path=args.deepspeed_config_dict,
-                            enabled=args.zero_stage == 3,
-                            mpu=mpu):
+    ## Something related to zero if you are using seq parallel. Feeding it to deepspeed zero?
+    # if hasattr(mpu, 'get_sequence_data_parallel_group'):
+    #     dpg = mpu.get_sequence_data_parallel_group()
+    # elif hasattr(mpu, 'get_data_parallel_group'):
+    #     dpg = mpu.get_data_parallel_group()
+    # else:
+    #     dpg = None
+    
+    ##TODO: Check what this does for ZERO
+    # with deepspeed.zero.Init(data_parallel_group=dpg,
+    #                         remote_device=None if args.remote_device == 'none' else args.remote_device,
+    #                         config_dict_or_path=args.deepspeed_config_dict,
+    #                         enabled=args.zero_stage == 3,
+    #                         mpu=mpu):
         ##TODO: enable PP here. 
-        if args.vision_backbone_type == 'vit':
-            print_rank_0("building VIT model ...")
-            model = VitClassificationModel(config=config,
-                                        num_classes=args.num_classes,
-                                        pre_process=pre_process,
-                                        post_process=post_process)
-        elif args.vision_backbone_type == 'mit':
-            print_rank_0("building MIT model ...")
-            model = MitClassificationModel(num_classes=args.num_classes,
-                                        pre_process=pre_process,
-                                        post_process=post_process)
-        else:
-            raise Exception('{} vision backbone is not supported.'.format(
-                                args.vision_backbone_type))
+    if args.vision_backbone_type == 'vit':
+        print_rank_0("building VIT model ...")
+        model = VitClassificationModel(config=config,
+                                    num_classes=args.num_classes,
+                                    pre_process=pre_process,
+                                    post_process=post_process)
+    elif args.vision_backbone_type == 'mit':
+        print_rank_0("building MIT model ...")
+        model = MitClassificationModel(num_classes=args.num_classes,
+                                    pre_process=pre_process,
+                                    post_process=post_process)
+    else:
+        raise Exception('{} vision backbone is not supported.'.format(
+                            args.vision_backbone_type))
+    # see_memory_usage(f"After Building Model", force=True)
     return model
 
 
@@ -83,6 +87,8 @@ def get_batch(data_iterator):
     return images, labels
 
 def loss_func(labels, output_tensor):
+    # if output_tensor is None:
+    #     return None, None
     logits = output_tensor.contiguous().float()
     loss = F.cross_entropy(logits, labels)
 
@@ -129,6 +135,7 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
 
 if __name__ == "__main__":
+    ##TODO: What's going on under the hood? Take time to replace it with MPI?  
     import ezpz as ez
     RANK = ez.setup_torch(backend="deepspeed")#, timeout=72000) ## 20 hours max.
     WORLD_SIZE = ez.get_world_size()

@@ -218,14 +218,23 @@ class DatasetFolder(VisionDataset):
         curr_index = index
         for x in range(self.total):
             try:
-                import torch
                 path, target = self.samples[curr_index]
-                # sample = self.loader(path)
+                sample = self.loader(path)
+
                 #### Using Toy Dataset ####
-                assert "IMG_W" in os.environ
-                w = int(os.environ["IMG_W"])
-                h = int(os.environ["IMG_H"])
-                sample = torch.randn(3, w, h, dtype=torch.float16) ## Doesn't let 92 channels
+                # import torch
+                # import ezpz as ez
+                # from megatron import get_args
+                # args = get_args()
+                # with open(os.environ["DATA_PATH_LOG"], "a") as file:
+                #     # traceback.print_stack(file=file)
+                #     # rank_str = f"Rank is {args.rank} for below image data \n"
+                #     rank_str = ""
+                #     file.write(rank_str + path + '\n')
+                # assert "IMG_W" in os.environ
+                # w = int(os.environ["IMG_W"])
+                # h = int(os.environ["IMG_H"])
+                # sample = torch.randn(3, w, h, dtype=torch.float16) ## Doesn't let 92 channels
                 break
             except Exception as e:
                 curr_index = np.random.randint(0, self.total)

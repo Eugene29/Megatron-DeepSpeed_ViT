@@ -762,7 +762,8 @@ def train_step(forward_step_func, data_iterator,
     # Update learning rate.
     if args.deepspeed:
         skipped_iter = 0
-        grad_norm = None
+        ## enable grad_norm statistics
+        grad_norm = model[0].get_global_grad_norm()
         num_zeros_in_grad = None
         
         loss_reduced = {}

@@ -224,6 +224,8 @@ def get_rng_state():
 
 def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
     """Save a model checkpoint."""
+    print_rank_0("Sorry! Checkpoint is disabled at the moment.")
+    return
     args = get_args()
 
     # Only rank zero of the data parallel writes to the disk.

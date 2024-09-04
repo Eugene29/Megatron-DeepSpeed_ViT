@@ -3,7 +3,11 @@
 ## ENVIRONMENT
 echo "Launching Environment."
 # module load conda && conda activate base
-. ~/venv/eugene/bin/activate ##USER: change env accordingly
+. ~/venv/stable/bin/activate ##USER: change env accordingly
+
+## DATA_FILEPATHS CONSUMED
+export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
+> $DATA_PATH_LOG ## clear file
 
 ## PYTHONPATH
 SCRIPT_DIR=$(dirname $0)
@@ -22,16 +26,15 @@ source "${SCRIPT_DIR}/mds_args.sh"
 ds_json=${SCRIPT_DIR}/ds_stage1_mb2_gb32_pp1_fp16.json
 export MICRO_BATCH=$(jq -r '.train_micro_batch_size_per_gpu' $ds_json) ## I think DS config overwrites anyway.
 
-
-# Pre-trains ViT based image classificaation model
-export CUDA_DEVICE_MAX_CONNECTIONS=1 ## ?? but you need it
+## ?? but you need it
+export CUDA_DEVICE_MAX_CONNECTIONS=1 
 
 # Training and validation paths should each point to a folder where each
 # sub-folder contains a collection of images in jpg or png format
 # e.g. If using imagenet, one train image might be, train_data/n01688243/n01688243_11301.JPEG
 CLASSIFIER_ARGS="
      --use-flash-attn-v2 \
-     ${no_pipeline_parallel} \
+     $no_pipeline_parallel \
      --pipeline-model-parallel-size ${PP} \
      --ds-sequence-parallel-size ${SP} \
      --tensor-model-parallel-size ${TP} \
@@ -52,16 +55,16 @@ CLASSIFIER_ARGS="
      --min-lr ${MIN_LR} \
      --attention-dropout 0.0 \
      --weight-decay 0.05 \
-     --lr-warmup-iters 2500 \
+     --lr-warmup-iters ${LR_WARMUP_ITERS} \
      --clip-grad 1.0 \
      --no-gradient-accumulation-fusion \
      --num-workers ${NGPUS} \
      --no-masked-softmax-fusion \
      --no-bias-dropout-fusion \
      --micro-batch-size ${MICRO_BATCH} \
+     --hidden-dropout 0
+     --save /home/eku/polaris/save \
 "
-     # --save ./ \
-     # --global-batch-size (( $MICRO_BATCH * 4 )) \
 
 DATA_ARGS="
      --tokenizer-type NullTokenizer \
@@ -74,9 +77,10 @@ DATA_ARGS="
 OUTPUT_ARGS="
      --log-interval 250 \
      --eval-interval 2500 \
-     --eval-iters ${EVAL_ITERS}
+     --eval-iters ${EVAL_ITERS} \
+     --wandb-project PolarisViT \
+     --save-interval 2500 \
 "
-     # --save-interval 2500 \
 
 DS_ARGS="
      --deepspeed \

@@ -48,6 +48,8 @@ class VitClassificationModel(MegatronModule):
     def forward(self, input):
         hidden_states = self.backbone(input)
 
+        ## Only rank==0 has hidden_states
+        # if self.post_process and hidden_states is not None:
         if self.post_process:
             hidden_states = self.head(hidden_states)
         return hidden_states

@@ -16,6 +16,10 @@ seq_len=32768
 ## We changed min_lr to a lower number (1.0e-6), which we found is able to
 ## provide better zero-shot eval results.
 
+## GCC issue
+# module load spack-pe-base/0.7.1 gcc/13.2.0
+module load spack-pe-base/0.7.1 gcc/11.4.0
+
 ## GPT-3 Small 125M
 # model_size=0.125
 # num_layers=12
@@ -135,7 +139,7 @@ lr_decay_style="cosine"
 mp_size=1
 
 ## Sequence parallelism, 1 is no SP
-sp_size=4
+sp_size=1
 
 ## Pipeline parallelism. To disable PP, set pp_size to 1 and no_pp to true.
 ## Note that currently both curriculum learning and random-LTD are NOT

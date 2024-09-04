@@ -400,7 +400,8 @@ class FlashSelfAttention(torch.nn.Module):
             self.use_flash_attn = True
 
     ## Add bathc_dim_idx as it is inputted later on. 
-    def forward(self, q, k, v, batch_dim_idx):
+    def forward(self, q, k, v):
+    # def forward(self, q, k, v, batch_dim_idx):
         """Implements the multihead softmax attention.
         Arguments
         ---------
@@ -414,8 +415,8 @@ class FlashSelfAttention(torch.nn.Module):
         seqlen_k = k.shape[1]
 
         ## Transpose batch_dim depending on batch_dim_idx. We want batch_dim on dim=0 always. 
-        if batch_dim_idx == 1:
-            q, k, v = q.transpose(0, 1).contiguous(), q.transpose(0, 1).contiguous(), q.transpose(0, 1).contiguous()
+        # if batch_dim_idx == 1:
+        #     q, k, v = q.transpose(0, 1).contiguous(), q.transpose(0, 1).contiguous(), q.transpose(0, 1).contiguous()
 
         if self.use_flash_attn:
             q, k, v = [rearrange(x, 'b s ... -> (b s) ...') for x in [q, k, v]]

@@ -11,22 +11,24 @@ NUM_NODES=${NUM_NODES:-1}
 DURATION=${DURATION:-1:00:00}
 
 ## OTHER CONFIGS
-PROJECT="datascience"
-QUEUE=preemptable
-TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
-RUN_NAME="N${NUM_NODES}-${TSTAMP}"
-RUN_NAME="ViT-CLF-${RUN_NAME}"
+PROJECT=datascience
+QUEUE=debug
+# QUEUE=debug-scaling
+TSTAMP=$(date "+%m.%d.%H%M")
+RUN_NAME=$TSTAMP
+# RUN_NAME="N${NUM_NODES}-${TSTAMP}"
+# RUN_NAME="ViT-CLF-${RUN_NAME}"
 
 ## Dynamically overwrite arguments
 echo "DIR=$DIR"
-echo "QUEUE=$QUEUE:"
+echo "QUEUE=$QUEUE"
 echo "PROJECT=datascience"
 echo "DURATION=$DURATION"
 echo "TSTAMP=$TSTAMP"
 echo "NUM_NODES=$NUM_NODES"
 echo "RUN_NAME: ${RUN_NAME}"
 
-## -V enables job-submit to inherit env variable. 
+## -V enables job-submit to inherit env variable, enabling inline variable assignment. 
 qsub \
   -q "${QUEUE}" \
   -A "${PROJECT}" \
@@ -35,4 +37,5 @@ qsub \
   -l select="$NUM_NODES" \
   -l walltime="${DURATION}" \
   -l filesystems=eagle:home:grand \
-   ${DIR}/mds_launch.sh |& tee mds_job.log
+   ${DIR}/mds_launch.sh |& tee job_logs/${RUN_NAME}.log
+echo "JOB IS SUBMITTED!"

@@ -7,6 +7,7 @@ from collections import OrderedDict
 
 from megatron import get_args
 from megatron.core import mpu, tensor_parallel, sequence_parallel
+import torch.distributed
 from .module import MegatronModule, fp32_to_float16, float16_to_fp32
 
 from .enums import AttnMaskType
@@ -44,6 +45,8 @@ def post_language_model_processing(lm_output, labels, logit_weights,
         logit_weights,
         parallel_output)
 
+    # print(f"output.shape: {output.shape}")
+    # torch.distributed.breakpoint()
     if labels is None:
         # [s b h] => [b s h]
         return output.transpose(0,1).contiguous()

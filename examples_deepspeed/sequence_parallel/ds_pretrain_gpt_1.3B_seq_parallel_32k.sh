@@ -4,7 +4,7 @@ dir=`pwd`
 ### Main configs
 ## GPT-3 models use 2K sequence length/context window
 seq_len=32768
-
+export DATA=./ALCF/data-lists/polaris/books.txt
 ## The "GPT-3 XXX" below are configs from GPT-3 paper
 ## https://arxiv.org/abs/2005.14165, choose based on
 ## your desired model size or build your own configs
@@ -18,7 +18,7 @@ seq_len=32768
 
 ## GCC issue
 # module load spack-pe-base/0.7.1 gcc/13.2.0
-module load spack-pe-base/0.7.1 gcc/11.4.0
+# module load spack-pe-base/0.7.1 gcc/11.4.0
 
 ## GPT-3 Small 125M
 # model_size=0.125
@@ -55,7 +55,7 @@ model_size=1.3
 num_layers=24
 hidden_size=2048
 num_attn_heads=16
-global_batch_size=2
+global_batch_size=4
 lr=2.0e-4
 min_lr=1.0e-6
 init_std=0.013

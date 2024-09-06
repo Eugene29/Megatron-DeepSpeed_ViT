@@ -59,6 +59,9 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     else:
         args = parser.parse_args()
 
+    ## Custom arguments 2.
+    args.dataset = os.environ["DATA"]
+
     # helper argument to set deepspeed pipeline parallel or not
     args.ds_pipeline_enabled = not args.no_pipeline_parallel
 

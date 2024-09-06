@@ -238,7 +238,7 @@ class VitBackbone(MegatronModule):
             ##3. Even better, I could split before linear encoding or before patchifying.
             ##NOTE: Priming DS Seq. Parallelism by splitting [s, b, h] -> [s/sp, b, h]
 
-            ##TODO: (CRITICAL) Don't we need to use sequence_data_parallel? However, sequence_data_parallel is just ddp? 
+            ##TODO: (CRITICAL) Don't we need to use sequence_data_parallel instead of sequence_parallel_rank? However, sequence_data_parallel is just ddp? 
             # args = get_args()
             # print(f"rank: {args.rank}")
             # print(f"get_sequence_parallel_rank: {mpu.get_sequence_parallel_rank()}")
@@ -248,23 +248,35 @@ class VitBackbone(MegatronModule):
                 seq_parallel_world_size = mpu.get_sequence_parallel_world_size()
                 seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
 
+                # assert self.seq_length % seq_parallel_world_size == 0
+                ## This should terminate it, and if you want more seq_length...
                 sub_seq_length = self.seq_length // seq_parallel_world_size
                 sub_seq_start = seq_parallel_world_rank * sub_seq_length
+                ##TODO: (CRITICAL) Last Rank might hold more tokens. Allows sequence parallelism with undivisable seq_length
                 sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
-
+                # if seq_parallel_world_rank == seq_parallel_world_size-1:
+                #     print("hi")
+                    # sub_seq_end = self.seq_length
+                # else:
+                #     print("hi")
+                    # sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
+                # torch.distributed.barrier()
                 hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
+                # print(f"seq_parallel_world_rank: {seq_parallel_world_rank}")
+                # print(f"preprocessed hidden_states.shape: {hidden_states.shape}")
         else:
             hidden_states = input
 
         hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
 
         ##NOTE: This seems like a pointless thing to do because you are going to extract the first token only anyway.
-        # from megatron import get_args
         # from megatron.core import tensor_parallel
-        # args = get_args()
-        # print(f"before, rank: {args.rank} \n hidden_states.shape: {hidden_states.shape}")
+        from megatron import get_args
+        args = get_args()
+        print(f"before, rank: {args.rank} \n hidden_states.shape: {hidden_states.shape}")
+        hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
+        print(f"after, rank: {args.rank} \n {hidden_states.shape}")
         # hidden_states = tensor_parallel.gather_from_sequence_parallel_region(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
-        # print(f"after, rank: {args.rank} \n {_gather_along_first_dim(hidden_states).shape}")
         # torch.distributed.breakpoint()
         # print(f"mpu.get_sequence_parallel_rank: {mpu.get_sequence_parallel_rank}")
         
@@ -280,3 +292,24 @@ class VitBackbone(MegatronModule):
                 hidden_states = hidden_states.transpose(0, 1).contiguous() ## Should always transpose back. 
 
         return hidden_states
+    
+
+def gather_from_sequence_parallel_group(input_):
+    """Gather tensors and concatinate along the first dimension."""
+    from megatron.core.parallel_state import get_sequence_parallel_group, get_sequence_parallel_world_size
+    from deepspeed.accelerator import get_accelerator
+
+    world_size = get_sequence_parallel_world_size()
+    # Bypass the function if we are using only 1 GPU.
+    if world_size == 1:
+        return input_
+
+    dim_size = list(input_.size())
+    dim_size[0] = dim_size[0] * world_size
+
+    output = torch.empty(dim_size, dtype=input_.dtype,
+                         device=get_accelerator().current_device_name())
+    # torch.distributed._all_gather_base(output, input_.contiguous(),
+    torch.distributed.all_gather_into_tensor(output, input_.contiguous(),
+                                       group=get_sequence_parallel_group())
+    return output

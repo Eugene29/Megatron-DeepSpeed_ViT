@@ -601,7 +601,8 @@ class ParallelAttention(MegatronModule):
         if self.use_flash_attn_triton:
             local_attn = FlashSelfAttentionTriton(causal=True, attention_dropout=args.attention_dropout)
         elif self.use_flash_attn:
-            local_attn = FlashSelfAttention(causal=True, attention_dropout=config.attention_dropout)
+            local_attn = FlashSelfAttention(causal=False, attention_dropout=config.attention_dropout)
+            # local_attn = FlashSelfAttention(causal=True, attention_dropout=config.attention_dropout)
         else:
             local_attn = CoreAttention(self.layer_number, config, self.attn_mask_type)
 
@@ -697,6 +698,7 @@ class ParallelAttention(MegatronModule):
         # Pre-allocate memory for key-values for inference.
         # =================================================
         is_first_step = False
+        ##NOTE: Likely causing the issue?? A lot of code here that could go wrong? But its FA specific??
         if inference_params:
             if self.layer_number not in inference_params.key_value_memory_dict:
                 inf_max_seq_len = inference_params.max_sequence_len

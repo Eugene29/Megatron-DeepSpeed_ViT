@@ -834,7 +834,7 @@ class ParallelAttention(MegatronModule):
                             for x in (query_layer, key_layer, value_layer)]
                     batch_dim_idx = 0
 
-                context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx)
+                context_layer = self.dist_attn(query_layer, key_layer, value_layer)
 
                 if not self.use_flash_attn_triton:
                     context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()

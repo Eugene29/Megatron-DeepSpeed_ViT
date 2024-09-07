@@ -273,9 +273,9 @@ class VitBackbone(MegatronModule):
         # from megatron.core import tensor_parallel
         from megatron import get_args
         args = get_args()
-        print(f"before, rank: {args.rank} \n hidden_states.shape: {hidden_states.shape}")
-        hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
-        print(f"after, rank: {args.rank} \n {hidden_states.shape}")
+        # print(f"before, rank: {args.rank} \n hidden_states.shape: {hidden_states.shape}")
+        # hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
+        # print(f"after, rank: {args.rank} \n {hidden_states.shape}")
         # hidden_states = tensor_parallel.gather_from_sequence_parallel_region(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
         # torch.distributed.breakpoint()
         # print(f"mpu.get_sequence_parallel_rank: {mpu.get_sequence_parallel_rank}")

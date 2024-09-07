@@ -35,8 +35,8 @@ export CUDA_DEVICE_MAX_CONNECTIONS=1
      # --train-iters ${TRAIN_ITERS} \
      # --lr-warmup-iters ${LR_WARMUP_ITERS} \
      # --use-flash-attn-v1 \
-     # --use-flash-attn-v2 \
 CLASSIFIER_ARGS="
+     --use-flash-attn-v2 \
      $no_pipeline_parallel \
      --pipeline-model-parallel-size ${PP} \
      --ds-sequence-parallel-size ${SP} \

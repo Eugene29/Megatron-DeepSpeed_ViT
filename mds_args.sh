@@ -16,7 +16,7 @@ NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 # NGPUS=1
 
 ## PARALLELIZATION
-export SP=${SP:-4} ## 1 if the var is not instantiated by mds_submit
+export SP=${SP:-1} ## 1 if the var is not instantiated by mds_submit
 export PP=${PP:-1}
 export TP=${TP:-1}
 if [ $PP -eq 1 ]; then 
@@ -73,6 +73,7 @@ elif [[ $DATA == 'CIFAR' ]]; then
     ## DATA
     NUM_EPOCHS=500
     TRAIN_SIZE=40000
+    EVAL_ITERS=$((10000 / 512)) ## Val sample?
     TRAIN_SAMPLES=$(($NUM_EPOCHS * $TRAIN_SIZE)) ##TODO: Why does IMNET only have 24912 image samples? 
     LR_WARMUP_SAMPLES=1000
     DS_CONFIG_FNAME="CIFAR.json"
@@ -116,6 +117,7 @@ fi
 
 ## EXPORT
 export TRAIN_SAMPLES="${TRAIN_SAMPLES:-5000}"
+export EVAL_ITERS="${EVAL_ITERS:-1000}"
 export LR_WARMUP_SAMPLES="${LR_WARMUP_SAMPLES:-250}"
 export EVAL_INTERVAL=${EVAL_INTERVAL:-250}
 export DATA_PATH="${DATA_PATH}"

@@ -14,6 +14,7 @@ from megatron.core import parallel_state as mpu, tensor_parallel
 from megatron.data.vit_dataset import build_train_valid_datasets
 from megatron.model.vision.classification import VitClassificationModel
 from megatron.model.vision.classification import MitClassificationModel
+from megatron.core.tensor_parallel.cross_entropy import vocab_parallel_cross_entropy
 from megatron.training import pretrain
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.arguments import core_transformer_config_from_args
@@ -81,8 +82,8 @@ def get_batch(data_iterator):
     data_i = tensor_parallel.broadcast_data(["label"], data_dict, torch.int64) ##TODO: lower precision, will it get angry at me if I set it to 16 or 32? 
     data_f = tensor_parallel.broadcast_data(["image"], data_dict, torch.float16) ## images are in int8 -> fp16
 
-    labels = data_i["label"].long()
-    images = data_f["image"]
+    labels = data_i["label"].long().contiguous()
+    images = data_f["image"].contiguous()
 
     return images, labels
 
@@ -90,6 +91,7 @@ def loss_func(labels, output_tensor):
     # if output_tensor is None:
     #     return None, None
     logits = output_tensor.contiguous().float()
+    # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels).mean() ##TODO: implement later for better throughput
     loss = F.cross_entropy(logits, labels)
 
     outputs = torch.argmax(logits, -1)

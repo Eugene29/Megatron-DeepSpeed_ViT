@@ -16,14 +16,14 @@ NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 # NGPUS=1
 
 ## PARALLELIZATION
-export SP=${SP:-1} ## 1 if the var is not instantiated by mds_submit
+export SP=${SP:-4} ## 1 if the var is not instantiated by mds_submit
 export PP=${PP:-1}
 export TP=${TP:-1}
 if [ $PP -eq 1 ]; then 
     export no_pipeline_parallel=--no-pipeline-parallel
 fi
 
-
+##TODO: ORGANIZE GIT COMMIT COMMANDS. 
 export TSTAMP="${TSTAMP}"
 export NHOSTS="${NHOSTS}"
 export NGPU_PER_HOST="${NGPU_PER_HOST}"
@@ -35,10 +35,10 @@ export NGPUS="${NGPUS}"
 export DATA=${DATA:-'CIFAR'}
 # export DATA=${DATA:-'CIFAR'}
 
+AEVARD_PATH=/eagle/datascience/vsastry/from_andre/aevard/datasets
 if [[ $DATA == 'IMNET' ]]; then
     # DATA_PATH="~/aevard/datasets/imnet-20/train ~/aevard/datasets/imnet-20/valid"
-    AEVARD_PATH=/eagle/datascience/vsastry/from_andre/aevard/datasets/imnet-20/
-    DATA_PATH="${AEVARD_PATH}/train ${AEVARD_PATH}/valid"
+    DATA_PATH="$AEVARD_PATH/imnet-20/train $AEVARD_PATH/imnet-20/valid"
     NUM_CLASSES=20
     LR=1e-4
     WEIGHT_DECAY=0
@@ -62,7 +62,7 @@ if [[ $DATA == 'IMNET' ]]; then
     echo "TRAINING ON IMNET"
 
 elif [[ $DATA == 'CIFAR' ]]; then
-    DATA_PATH="~/aevard/datasets/CIFAR10/train ~/aevard/datasets/CIFAR10/valid"
+    DATA_PATH="$AEVARD_PATH/CIFAR10/train $AEVARD_PATH/CIFAR10/valid"
     NUM_CLASSES=10
     LR=1e-4
     WEIGHT_DECAY=0
@@ -73,9 +73,10 @@ elif [[ $DATA == 'CIFAR' ]]; then
     ## DATA
     NUM_EPOCHS=500
     TRAIN_SIZE=40000
-    EVAL_ITERS=$((10000 / 512)) ## Val sample?
-    TRAIN_SAMPLES=$(($NUM_EPOCHS * $TRAIN_SIZE)) ##TODO: Why does IMNET only have 24912 image samples? 
-    LR_WARMUP_SAMPLES=1000
+    EVAL_ITERS=19 ##TODO: Val samples?
+    # EVAL_ITERS=$((10000 / 512)) ##TODO: Val samples?
+    TRAIN_SAMPLES=$(($NUM_EPOCHS * $TRAIN_SIZE))
+    LR_WARMUP_SAMPLES=500
     DS_CONFIG_FNAME="CIFAR.json"
 
     ## ViT-Tiny

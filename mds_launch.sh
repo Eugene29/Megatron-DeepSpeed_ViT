@@ -11,23 +11,27 @@ export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
 
 ## PYTHONPATH
 SCRIPT_DIR=$(dirname $0)
-echo "Script Directory: ${SCRIPT_DIR}"
 PYTHONPATH=$og_PYTHONPATH
-export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Adding MEGATRON to pypath
+
+TEMP_DS=$HOME/DeepSpeed ##TODO: Remove later.
+# TEMP_DS=/soft/applications/conda/2024-04-29/mconda3/lib/python3.11/site-packages/
+# PYTHONPATH="$TEMP_DS:${PYTHONPATH}" ##TODO: Remove later.
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Adding MEGATRON to pypath ## This should be done automatically? 
 
 ## HOST NODE
-echo "Exporting and sourcing other scripts."
 export MASTER_ADDR=localhost
 export MASTER_PORT=6000
 
 ## ARGUMENTS
-echo "Running argument setup."
 source "${SCRIPT_DIR}/mds_args.sh"
 ds_json=${SCRIPT_DIR}/${DS_CONFIG_FNAME}
 export MICRO_BATCH=$(jq -r '.train_micro_batch_size_per_gpu' $ds_json) ## I think DS config overwrites anyway.
 # MICRO_BATCH=$(($MICRO_BATCH * $SP * $TP)) ##NOTE: Implemented to match the global batch size with DP
 ## ?? but you need it
 export CUDA_DEVICE_MAX_CONNECTIONS=1 
+
+echo "Script Directory: ${SCRIPT_DIR}"
+echo "PYTHON PATH: $PYTHONPATH"
 
 # Training and validation paths should each point to a folder where each
 # sub-folder contains a collection of images in jpg or png format
@@ -78,8 +82,8 @@ DATA_ARGS="
      --split 949,50,1 \
 "
 
+     # --eval-iters 19 \  ##TODO: What really happens if you don't set eval-iter? How to evaluate on entire validation set?
 OUTPUT_ARGS="
-     --eval-iters ${EVAL_ITERS} \ ##TODO: What really happens if you don't set eval-iter? How to evaluate on entire validation set?
      --log-interval 25 \
      --eval-interval $EVAL_INTERVAL \
      --wandb-project PolarisViT \
@@ -91,11 +95,11 @@ DS_ARGS="
      --deepspeed_config=$ds_json
 "
 
-echo "Arguments:"
-echo "${CLASSIFIER_ARGS}"
-echo "${DATA_ARGS}"
-echo "${OUTPUT_ARGS}"
-echo "${DS_ARGS}"
+# echo "Arguments:"
+# echo "${CLASSIFIER_ARGS}"
+# echo "${DATA_ARGS}"
+# echo "${OUTPUT_ARGS}"
+# echo "${DS_ARGS}"
 
 
 echo "Launching mpiexec."
@@ -108,5 +112,5 @@ run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile
      ${OUTPUT_ARGS} \
      ${DS_ARGS}"
 
-echo "run_cmd: $run_cmd"
+printf "run_cmd: \n\n $run_cmd"
 eval $run_cmd

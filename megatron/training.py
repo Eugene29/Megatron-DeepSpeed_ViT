@@ -2,6 +2,7 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
 """Pretrain utilities."""
+import torch.distributed
 from torch.profiler import profile, record_function, ProfilerActivity
 
 from datetime import datetime
@@ -706,15 +707,49 @@ def train_step(forward_step_func, data_iterator,
     if args.timing_log_level < 2:
         config.timers = None
 
-    losses_reduced = forward_backward_func(
-        forward_step_func=forward_step_func,
-        data_iterator=data_iterator,
-        model=model,
-        num_microbatches=get_num_microbatches(),
-        seq_length=args.seq_length,
-        micro_batch_size=args.micro_batch_size,
-        decoder_seq_length=args.decoder_seq_length,
-        forward_only=False)
+    # losses_reduced = forward_backward_func(
+    #     forward_step_func=forward_step_func,
+    #     data_iterator=data_iterator,
+    #     model=model,
+    #     num_microbatches=get_num_microbatches(),
+    #     seq_length=args.seq_length,
+    #     micro_batch_size=args.micro_batch_size,
+    #     decoder_seq_length=args.decoder_seq_length,
+    #     forward_only=False)
+
+    torch.manual_seed(31337)
+    input_tensor = torch.randn(1, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device())
+    model[0].eval()
+    output1 = model[0](input_tensor)
+    # output2 = model[0](input_tensor)
+    # print(f"output1: {output1}")
+    # print(f"output2: {output2}")
+    # reproduciblility = f"torch all: torch.eq(output1, output2): {torch.all(torch.eq(output1, output2))}"
+
+    # import os
+    # print(f"os.curdir(): {os.curdir()}")
+    # print(os.path.exists("debug/"))
+    # with open("debug/grad_SP.txt", "w") as f:
+    #     f.write(f"What's in losses_reduced?: {losses_reduced}")
+    #     for name, param in model[0].named_parameters():
+    #         grad = deepspeed.utils.safe_get_full_grad(param)
+    #         f.write(f"name: {name}, param: {grad}")
+    # from megatron.core import parallel_state as mpu
+    # with open("debug/output_DP.txt", "a") as f:
+    #     if mpu.get_sequence_parallel_rank() == 0:
+    #         # f.write(f"losses_reduced: {losses_reduced} \n")
+    #         f.write(f"input: {input_tensor} \n")
+    #         f.write(f"output1: {output1} \n")
+            # f.write(f"output2: {output2} \n")
+            # f.write(f"reproduciblility: {reproduciblility} \n")
+
+    # with open("debug/weights_SP.txt", "w") as f:
+    # # with open("debug/weights_DP.txt", "w") as f:
+    #     for name, param in model[0].named_parameters():
+    #         f.write(f"name: {name}, param: {param}")
+
+    raise KeyError("break")
+
 
     # reset timers if necessary
     if config.timers is None:

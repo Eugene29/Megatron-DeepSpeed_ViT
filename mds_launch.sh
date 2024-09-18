@@ -4,6 +4,10 @@
 echo "Launching Environment."
 # module load conda && conda activate base
 . ~/venv/stable/bin/activate ##USER: change env accordingly
+## deepspeed version missing error workaround
+# cd $HOME/DeepSpeed;
+# python -c "import deepspeed; deepspeed.__version__"
+# cd ..
 
 ## DATA_FILEPATHS CONSUMED
 export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
@@ -13,7 +17,7 @@ export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
 SCRIPT_DIR=$(dirname $0)
 PYTHONPATH=$og_PYTHONPATH
 
-TEMP_DS=$HOME/DeepSpeed ##TODO: Remove later.
+# TEMP_DS=$HOME/DeepSpeed ##TODO: Remove later.
 # TEMP_DS=/soft/applications/conda/2024-04-29/mconda3/lib/python3.11/site-packages/
 # PYTHONPATH="$TEMP_DS:${PYTHONPATH}" ##TODO: Remove later.
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Adding MEGATRON to pypath ## This should be done automatically? 

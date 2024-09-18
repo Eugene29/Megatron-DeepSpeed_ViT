@@ -280,7 +280,7 @@ class CoreAttention(MegatronModule):
         # ===================================
         # Raw attention scores. [b, np, s, s]
         # ===================================
-
+        correct_output_shape = query_layer.shape
         # [b, np, sq, sk]
         output_size = (query_layer.size(1),
                        query_layer.size(2),
@@ -359,6 +359,8 @@ class CoreAttention(MegatronModule):
         new_context_layer_shape = context_layer.size()[:-2] + \
             (self.hidden_size_per_partition,)
         context_layer = context_layer.view(*new_context_layer_shape)
+        # print(f"correct_output_shape: {correct_output_shape}")
+        # context_layer = context_layer.view(correct_output_shape) ##TODO: correct fix to avoid "fusing dimensions?"
 
         return context_layer
 
@@ -839,7 +841,8 @@ class ParallelAttention(MegatronModule):
                 if not self.use_flash_attn_triton:
                     context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
             else:
-                context_layer = self.dist_attn(query_layer, key_layer, value_layer, attention_mask)
+                context_layer = self.dist_attn(query_layer, key_layer, value_layer, attention_mask=attention_mask)
+                # context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx=batch_dim_idx, attention_mask=attention_mask)
         else:
             if self.use_flash_attn:
                 if not self.use_flash_attn_triton:

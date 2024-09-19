@@ -2,6 +2,7 @@
 
 """Pretrain VIT"""
 from mpi4py import MPI
+import torch.distributed as dist
 import torch.distributed
 comm = MPI.COMM_WORLD
 comm.Barrier()
@@ -89,17 +90,116 @@ def get_batch(data_iterator):
     return images, labels
 
 def loss_func(labels, output_tensor):
-    # if output_tensor is None:
-    #     return None, None
-    logits = output_tensor.contiguous().float()
-    # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels).mean() ##TODO: implement later for better throughput
-    loss = F.cross_entropy(logits, labels)
+    # def gather_last_dim_from_sequence_parallel_region(input_, tensor_parallel_output_grad=True):
+    #     return _GatherFromSequenceParallelRegion.apply(input_, tensor_parallel_output_grad)
 
+    seq_rank = mpu.get_sequence_parallel_rank()
+    # # print(f"seq_rank: {mpu.get_sequence_parallel_rank()}")
+    # logits = output_tensor.contiguous().float()
+    # # print(f"logits: {logits}")
+    # loss = F.cross_entropy(logits, labels)
+    # args = get_args()
+    # labels = F.one_hot(labels, num_classes=args.num_classes)
+    # labels = labels.unsqueeze(0)
+    # output_tensor = output_tensor.unsqueeze(0)
+    # output_tensor = output_tensor.T.unsqueeze(-1) ## TODO: is .T as efficient as .transpose?
+
+    # if mpu.get_sequence_parallel_rank() == 0:
+    # print(f"labels.shape: {labels.shape}")
+    # print(f"output_tensor.shape: {output_tensor.shape}")
+    logits = output_tensor.contiguous().float()
     outputs = torch.argmax(logits, -1)
     correct = (outputs == labels).float()
     accuracy = torch.mean(correct)
+    # if seq_rank > 1:
+    #     dist.broadcast(logits, src=0, group=mpu.get_sequence_parallel_group())
+    # from megatron.core.sequence_parallel import vocab_sequence_parallel_cross_entropy
+    # from megatron.core.tensor_parallel import vocab_parallel_cross_entropy
+    loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
+    import os
+    debug_fname = os.environ["DEBUG_FNAME"]
+    if debug_fname != "None":
+        with open(debug_fname, "a") as f:
+            f.write(f"[{seq_rank}] output after head: {output_tensor}\n")
+            f.write(f"[{seq_rank}] real losses_reduced: {loss}\n")
 
+    # if seq_rank==0:
+    #     logits = logits.T
+    #     # torch.distributed.gather(logits, dst=0, group=group)
+    #     # from megatron.core.tensor_parallel import mappings 
+    #     # from megatron.core.tensor_parallel.mappings import gather_from_tensor_model_parallel_region, dummy_function
+    #     from megatron.core.tensor_parallel.mappings import gather_from_sequence_parallel_group
+    #     from megatron.core import tensor_parallel
+    #     # import gather_from_sequence_parallel_group
+    #     logits = tensor_parallel.gather_from_sequence_parallel_group(logits).T.contiguous() ## Gather first dim
+    #     logits = tensor_parallel.gather_from_tensor_model_parallel_region(logits).T.contiguous() ## Gather first dim
+        
+    #     print(f"logits.shape: {logits.shape}")
+    #     print(f"labels.shape: {labels.shape}")
+    #     loss = F.cross_entropy(logits, labels)
+    #     # outputs = torch.argmax(logits, -1)
+    #     # correct = (outputs == labels).float()
+    #     # accuracy = torch.mean(correct)
+    # else:
+    #     loss = torch.empty(1, device=torch.cuda.current_device())
+    #     accuracy = torch.empty(1, device=torch.cuda.current_device())
+    # group = mpu.get_sequence_parallel_group()
+    # dist.barrier(group=group)
+    # # dist.broadcast(loss, src=0, group=group)
+    # # dist.broadcast(accuracy, src=0, group=group)
+
+    # with open(debug_fname, "a") as f:
+    #     f.write(f"[{seq_rank}] Got hung here?\n")
+
+    # with open(debug_fname, "a") as f:
+    #     f.write(f"[{seq_rank}] output after head: {output_tensor}\n")
+
+    # with open(debug_fname, "a") as f:
+    #     f.write(f"[{seq_rank}] real losses_reduced: {loss}\n")
+    # raise KeyboardInterrupt("break")
+
+    # print(f"loss: {loss}")
+    # print(f"loss.shape: {loss.shape}")
+    # print(f"loss.grad_fn: {loss.grad_fn}")
+    # print(f"loss.device: {loss.device}")
+    # print(f"outputs.device: {outputs.device}")
+    # print(f"accuracy.device: {accuracy.device}")
+    # else:
+        # print("yahoo")
+        # loss = torch.empty(1, device=torch.cuda.current_device())
+        # accuracy = torch.empty(1, device=torch.cuda.current_device())
+        # loss = torch.zeros(1, device=torch.cuda.current_device())
+        # accuracy = torch.zeros(1, device=torch.cuda.current_device())
+    # dist.broadcast(loss, src=0, group=mpu.get_sequence_parallel_group())
+    # dist.broadcast(accuracy, src=0, group=mpu.get_sequence_parallel_group())
+    # dist.all_reduce(loss, op=dist.ReduceOp.SUM, group=mpu.get_sequence_parallel_group())
+    # dist.all_reduce(accuracy, op=dist.ReduceOp.SUM, group=mpu.get_sequence_parallel_group())
+
+
+    # print(f"loss: {loss}")
+    # print(f"loss.grad_fn: {loss.grad_fn}")
+    # print(f"loss[0].grad_fn: {loss[0].grad_fn}")
+
+    # raise KeyError("breakdance")
+
+    # comm.Barrier()
+    # print(f"[{seq_rank}] loss: {loss}")
+    # print(f"[{seq_rank}] accuracy: {accuracy}")
+    ## output, logits, loss: [b, ]
+    # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels).mean() ##TODO: implement later for better throughput
+    # print_rank_0(f"output_tensor.shape: {output_tensor.shape}")
+    # print_rank_0(f"logits.shape: {logits.shape}")
+    # print_rank_0(f"labels.shape: {labels.shape}")
+    
+
+    ## TODO: Could only run on 1 of the SP group.
+    # with torch.no_grad():
+    #     gathered_logits = gather_from_sequence_parallel_group(logits)
+    #     outputs = torch.argmax(gathered_logits, -1)
+    #     correct = (outputs == labels).float()
+    #     accuracy = torch.mean(correct)
     averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
+    # averaged_loss = loss, accuracy
 
     return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
 

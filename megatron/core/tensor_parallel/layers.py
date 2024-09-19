@@ -513,7 +513,7 @@ class ColumnParallelLinear(torch.nn.Module):
                  keep_master_weight_for_test=False,
                  skip_bias_add=False,
                  skip_weight_param_allocation: bool=False,
-                 moe=False, enable_expert_tensor_parallelism=False):
+                 moe=False, enable_expert_tensor_parallelism=False, for_seq_parallel=False):
         torch.nn.Module.__init__(self)
 
         # Keep input parameters
@@ -521,7 +521,10 @@ class ColumnParallelLinear(torch.nn.Module):
         self.output_size = output_size
         self.gather_output = gather_output
         # Divide the weight matrix along the last dimension.
-        if moe and (not enable_expert_tensor_parallelism):
+        if for_seq_parallel:
+            from megatron.core.parallel_state import get_sequence_parallel_world_size
+            world_size = get_sequence_parallel_world_size()
+        elif moe and (not enable_expert_tensor_parallelism):
             world_size = 1
             self.is_expert_without_slicing = True
         else:

@@ -99,11 +99,11 @@ def validate_args(args, defaults={}):
         assert args.pipeline_model_parallel_size == 1, \
             "pipeline_model_parallel_size must be 1 if pipeline parallel is disabled"
         
-    if args.ds_sequence_parallel_size > 1:
-        # import deepspeed
-        # print(f"deepspeed.__version__: {deepspeed.__version__}")
-        # deepspeed.__version__ ## sometimes calling this fixes the deepspeed version issue.
-        assert version.parse(deepspeed.__version__) >= version.parse("0.10.2"), "sequence parallelism requires DeepSpeed version 0.10.2+"
+    # if args.ds_sequence_parallel_size > 1:
+    #     # import deepspeed
+    #     # print(f"deepspeed.__version__: {deepspeed.__version__}")
+    #     # deepspeed.__version__ ## sometimes calling this fixes the deepspeed version issue.
+    #     assert version.parse(deepspeed.__version__) >= version.parse("0.10.2"), "sequence parallelism requires DeepSpeed version 0.10.2+"
 
     model_parallel_size = args.pipeline_model_parallel_size * \
                           args.tensor_model_parallel_size * \

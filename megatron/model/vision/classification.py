@@ -3,6 +3,7 @@
 """Vision Transformer(VIT) model."""
 
 import torch
+import torch.distributed
 from torch.nn.init import trunc_normal_
 from megatron import get_args
 from megatron.model.utils import get_linear_layer
@@ -52,6 +53,13 @@ class VitClassificationModel(MegatronModule):
         # if self.post_process and hidden_states is not None:
         if self.post_process:
             hidden_states = self.head(hidden_states)
+
+        # import os
+        # debug_fname = os.environ['DEBUG_FNAME']
+        # if torch.distributed.get_rank()==0:
+        #     with open(debug_fname, "a") as f:
+        #         f.write(f"Final output: {hidden_states}\n")
+        #         f.write(f"Final output shape: {hidden_states.shape}\n")
         return hidden_states
 
 

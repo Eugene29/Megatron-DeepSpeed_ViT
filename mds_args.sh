@@ -19,8 +19,8 @@ export TP=${TP:-1}
 if [ $PP -eq 1 ]; then 
     export no_pipeline_parallel=--no-pipeline-parallel
 fi
-export DEBUG_FNAME=debug/output_SP.txt
-# export DEBUG_FNAME=debug/grad_SP.txt
+# export DEBUG_FNAME=debug/output_SP.txt
+export DEBUG_FNAME=debug/grad_SP.txt
 > $DEBUG_FNAME
 
 

@@ -259,25 +259,25 @@ class VitBackbone(MegatronModule):
             # print(f"args.rank: {args.rank}, hidden_states (before chunking): {hidden_states.shape}")
             # print(F"hidden_states.shape: {hidden_states.shape}")
             hidden_states = hidden_states[:-1] ##TODO: EXCLUDE LAST SEQUENCE TOKEN TO MATCH UP DIMENSIONALITY FOR NOW...
-            # if self.ds_sequence_parallel:
-            #     seq_parallel_world_size = mpu.get_sequence_parallel_world_size()
-            #     seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
-            #     # print(f"seq_rank, torch_rank: {mpu.get_sequence_parallel_rank(), torch.distributed.get_rank()}")
+            if self.ds_sequence_parallel:
+                seq_parallel_world_size = mpu.get_sequence_parallel_world_size()
+                seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
+                # print(f"seq_rank, torch_rank: {mpu.get_sequence_parallel_rank(), torch.distributed.get_rank()}")
                 
-            #     # assert self.seq_length % seq_parallel_world_size == 0
-            #     ## This should terminate it, and if you want more seq_length...
-            #     sub_seq_length = self.seq_length // seq_parallel_world_size
-            #     sub_seq_start = seq_parallel_world_rank * sub_seq_length
-            #     ##TODO: (CRITICAL) Last Rank might hold more tokens. Allows sequence parallelism with undivisable seq_length
-            #     sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
-            #     # if seq_parallel_world_rank == seq_parallel_world_size-1:
-            #     #     print("hi")
-            #         # sub_seq_end = self.seq_length
-            #     # else:
-            #     #     print("hi")
-            #         # sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
-            #     # torch.distributed.barrier()
-            #     hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
+                # assert self.seq_length % seq_parallel_world_size == 0
+                ## This should terminate it, and if you want more seq_length...
+                sub_seq_length = self.seq_length // seq_parallel_world_size
+                sub_seq_start = seq_parallel_world_rank * sub_seq_length
+                ##TODO: (CRITICAL) Last Rank might hold more tokens. Allows sequence parallelism with undivisable seq_length
+                sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
+                # if seq_parallel_world_rank == seq_parallel_world_size-1:
+                #     print("hi")
+                    # sub_seq_end = self.seq_length
+                # else:
+                #     print("hi")
+                    # sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
+                # torch.distributed.barrier()
+                hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
                 # print(f"sub_seq_start, sub_seq_end: {sub_seq_start, sub_seq_end}")
                 # print(f"seq_parallel_world_rank: {seq_parallel_world_rank}")
                 # print(f"seq_parallel_world_rank: {seq_parallel_world_rank}")
@@ -299,8 +299,8 @@ class VitBackbone(MegatronModule):
 
         hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
 
-        # if self.ds_sequence_parallel:
-        #     hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
+        if self.ds_sequence_parallel:
+            hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
         # import os
         # debug_fname = os.environ['DEBUG_FNAME']
         # with open(debug_fname, "a") as f:

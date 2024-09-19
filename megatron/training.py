@@ -729,12 +729,13 @@ def train_step(forward_step_func, data_iterator,
 
     import os
     debug_fname = os.environ['DEBUG_FNAME']
-    # with open(debug_fname, "a") as f:
-    #     # f.write(f"What's in losses_reduced?: {losses_reduced}")
-    #     # f.write(f"output1: {output1}")
-    #     for name, param in model[0].named_parameters():
-    #         grad = deepspeed.utils.safe_get_full_grad(param)
-    #         f.write(f"name: {name}, param: {grad}")
+    if torch.distributed.get_rank()==0:
+        with open(debug_fname, "a") as f:
+            # f.write(f"What's in losses_reduced?: {losses_reduced}")
+            # f.write(f"output1: {output1}")
+            for name, param in model[0].named_parameters():
+                grad = deepspeed.utils.safe_get_full_grad(param)
+                f.write(f"name: {name}, param: {grad}")
 
     # with open("debug/weights_SP.txt", "w") as f:
     # # with open("debug/weights_DP.txt", "w") as f:

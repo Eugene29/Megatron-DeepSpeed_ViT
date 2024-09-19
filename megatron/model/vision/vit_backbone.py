@@ -221,6 +221,7 @@ class VitBackbone(MegatronModule):
         self.transformer.set_input_tensor(input_tensor)
 
     def forward(self, input):
+        print(f"input: {input}")
         if self.pre_process:
             rearranged_input = einops.rearrange(
                 input,
@@ -256,11 +257,13 @@ class VitBackbone(MegatronModule):
             
             # args = get_args()
             # print(f"args.rank: {args.rank}, hidden_states (before chunking): {hidden_states.shape}")
+            # print(F"hidden_states.shape: {hidden_states.shape}")
+            hidden_states = hidden_states[:-1] ##TODO: EXCLUDE LAST SEQUENCE TOKEN TO MATCH UP DIMENSIONALITY FOR NOW...
             if self.ds_sequence_parallel:
                 seq_parallel_world_size = mpu.get_sequence_parallel_world_size()
                 seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
-                # print(f"mpu.get_sequence_parallel_rank(): {mpu.get_sequence_parallel_rank()}")
-
+                # print(f"seq_rank, torch_rank: {mpu.get_sequence_parallel_rank(), torch.distributed.get_rank()}")
+                
                 # assert self.seq_length % seq_parallel_world_size == 0
                 ## This should terminate it, and if you want more seq_length...
                 sub_seq_length = self.seq_length // seq_parallel_world_size
@@ -283,6 +286,9 @@ class VitBackbone(MegatronModule):
         else:
             hidden_states = input
 
+        # if self.ds_sequence_parallel:
+        #     hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
+
         # with open("debug/output_SP.txt", "w") as f:
         #     if self.ds_sequence_parallel:
         #         f.write(f"first hidden_state: {gather_from_sequence_parallel_group(hidden_states)}")
@@ -293,26 +299,31 @@ class VitBackbone(MegatronModule):
 
         hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
 
-        with open("debug/output_SP.txt", "a") as f:
-            if self.ds_sequence_parallel:
-                # if seq_parallel_world_rank == 0:
-                    ## just the first block
-                f.write(f"seq_parallel_world_rank: {seq_parallel_world_rank}\n")
-                # f.write(f"first hidden_state: {gather_from_sequence_parallel_group(hidden_states)}\n")
-                # f.write(f"first hidden_state shape: {gather_from_sequence_parallel_group(hidden_states).shape}\n")
-                f.write(f"first hidden_state: {hidden_states}\n")
-                f.write(f"first hidden_state shape: {hidden_states.shape}\n")
-            else:
-                dp_rank = mpu.get_data_parallel_rank()
-                f.write(f"dp_parallel_world_rank: {dp_rank}\n")
-                f.write(f"first hidden_state: {hidden_states}\n")
-                f.write(f"first hidden_state shape: {hidden_states.shape}\n")
+        # if self.ds_sequence_parallel:
+        #     hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
+        # import os
+        # debug_fname = os.environ['DEBUG_FNAME']
+        # with open(debug_fname, "a") as f:
+        #     if self.ds_sequence_parallel:
+        #         # if seq_parallel_world_rank == 0:
+        #             ## just the first block
+        #         f.write(f"seq_parallel_world_rank: {seq_parallel_world_rank}\n")
+        #         # f.write(f"first hidden_state: {gather_from_sequence_parallel_group(hidden_states)}\n")
+        #         # f.write(f"first hidden_state shape: {gather_from_sequence_dparallel_group(hidden_states).shape}\n")
+        #         f.write(f"(after transformer) hidden_state: {hidden_states}\n")
+        #         f.write(f"(after transformer) hidden_state shape: {hidden_states.shape}\n")
+        #     else:
+        #         dp_rank = mpu.get_data_parallel_rank()
+        #         f.write(f"dp_parallel_world_rank: {dp_rank}\n")
+        #         f.write(f"(after transformer) hidden_state: {hidden_states}\n")
+        #         f.write(f"(after transformer) hidden_state shape: {hidden_states.shape}\n")
 
         ##NOTE: This seems like a pointless thing to do because you are going to extract the first token only anyway.
         # from megatron.core import tensor_parallel
-        args = get_args()
+        # args = get_args()
         # print(f"before rank: {args.rank}, hidden_states.shape: {hidden_states.shape}")
-        hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
+        if self.ds_sequence_parallel:
+            hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
         # print(f"after rank: {args.rank}, {hidden_states.shape}")
         # hidden_states = tensor_parallel.gather_from_sequence_parallel_region(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
         # torch.distributed.breakpoint()

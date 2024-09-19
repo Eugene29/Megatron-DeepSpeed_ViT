@@ -2,6 +2,7 @@
 
 """Pretrain VIT"""
 from mpi4py import MPI
+import torch.distributed
 comm = MPI.COMM_WORLD
 comm.Barrier()
 
@@ -145,6 +146,14 @@ if __name__ == "__main__":
     DEVICE_TYPE = ez.dist.get_torch_device_type()
     if torch.cuda.is_available():
         torch.cuda.set_device(LOCAL_RANK)
+
+    # RANK = comm.Get_rank()
+    # WORLD_SIZE = comm.Get_size()
+    # LOCAL_RANK = RANK % WORLD_SIZE
+    # # torch.distributed.init_process_group(backend="deepspeed")
+    # torch.distributed.init_process_group(backend="deepspeed", init_method="env://", world_size=WORLD_SIZE, rank=RANK)
+    # ##Q. when is the above neccessary? pretrain_gpt for example, doesn't have any torch.distributed.init_process_group
+    # torch.distributed.barrier()
 
     pretrain(
         train_valid_test_datasets_provider,

@@ -108,6 +108,7 @@ DS_ARGS="
 
 echo "Launching mpiexec."
 # run_cmd="python \
+
 run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
      --cpu-bind depth -d 16 python \
      ${SCRIPT_DIR}/pretrain_vision_classify.py \
@@ -116,5 +117,14 @@ run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile
      ${OUTPUT_ARGS} \
      ${DS_ARGS}"
 
-printf "run_cmd: \n\n $run_cmd"
+# run_cmd="deepspeed --hostfile ${PBS_NODEFILE} \
+#       --num_gpus ${NGPUS} \
+#       ${SCRIPT_DIR}/pretrain_vision_classify.py \
+#       ${CLASSIFIER_ARGS} \
+#       ${DATA_ARGS} \
+#       ${OUTPUT_ARGS} \
+#       ${DS_ARGS}"
+
+# printf "run_cmd: \n\n $run_cmd"
+# eval $run_cmd
 eval $run_cmd

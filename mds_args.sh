@@ -11,10 +11,7 @@ NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 # NGPU_PER_HOST=2
 # NGPUS=2
 
-# CUDA_VISIBLE_DEVICES=0
-# NGPU_PER_HOST=1
-# NGPUS=1
-
+## SP
 ## PARALLELIZATION
 export SP=${SP:-4} ## 1 if the var is not instantiated by mds_submit
 export PP=${PP:-1}
@@ -22,6 +19,28 @@ export TP=${TP:-1}
 if [ $PP -eq 1 ]; then 
     export no_pipeline_parallel=--no-pipeline-parallel
 fi
+export DEBUG_FNAME=debug/output_SP.txt
+# export DEBUG_FNAME=debug/grad_SP.txt
+> $DEBUG_FNAME
+
+
+# ## DP
+# ## CUDA DEVICE (for experiments)
+# CUDA_VISIBLE_DEVICES=0
+# NGPU_PER_HOST=1
+# NGPUS=1
+
+# ## PARALLELIZATION
+# export SP=${SP:-1} ## 1 if the var is not instantiated by mds_submit
+# export PP=${PP:-1}
+# export TP=${TP:-1}
+# if [ $PP -eq 1 ]; then 
+#     export no_pipeline_parallel=--no-pipeline-parallel
+# fi
+# export DEBUG_FNAME=debug/output_DP.txt
+# # export DEBUG_FNAME=debug/grad_DP.txt
+# > $DEBUG_FNAME
+
 
 ##TODO: ORGANIZE GIT COMMIT COMMANDS. 
 export TSTAMP="${TSTAMP}"

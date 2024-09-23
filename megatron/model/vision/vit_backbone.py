@@ -33,19 +33,38 @@ class VitMlpHead(MegatronModule):
             bias is set to zero.
     """
 
-    def __init__(self, hidden_size, num_classes):
+    def __init__(self, hidden_size, num_classes, config):
+        from megatron.core.tensor_parallel import ColumnParallelLinear
         super(VitMlpHead, self).__init__()
-        self.dense_in = torch.nn.Linear(hidden_size, hidden_size)
-        self.relu = torch.nn.ReLU()
-        self.dense_out = torch.nn.Linear(hidden_size, num_classes)
+        # self.dense_in = torch.nn.Linear(hidden_size, hidden_size)
+        ## TODO: Is this agnostic of parallelism?
+        # print(f"self.config: {config}")
+        # print(f"self.config.init_method: {config.init_method}")
+        self.dense_in = ColumnParallelLinear(hidden_size, hidden_size, config=config, init_method=config.init_method, gather_output=True)
+        # self.relu = torch.nn.ReLU()
+        # self.dense_out = torch.nn.Linear(hidden_size, num_classes)
+        self.dense_out = ColumnParallelLinear(hidden_size, num_classes, config=config, init_method=config.init_method, gather_output=False)
         torch.nn.init.constant_(self.dense_out.bias, -10)
+
+        # super(VitMlpHead, self).__init__(share_word_embeddings=False)
+        # self.tensor_model_parallel_size = get_tensor_model_parallel_world_size()
+        # from megatron.tensor_parallel import CollumParallelLinear
+        # self.dense_in = ColumnParallelLinear(hidden_size, hidden_size,gather_output=True)
+        # self.dense_out = ColumnParallelLinear(hidden_size, num_classes, gather_output=False)
 
     def forward(self, hidden_states):
         # hidden_states: [b, 1, h]
         # sequence_index: index of the token to pool.
-        dense_in_result = self.dense_in(hidden_states)
-        tanh_result = torch.tanh(dense_in_result)
-        dense_out_result = self.dense_out(tanh_result)
+        dense_in_result, _ = self.dense_in(hidden_states) ## TODO: Isn't a combination of Row and Column Parallel Linear better? 
+        tanh_result = torch.tanh(dense_in_result) ## wtf, tanh is called instead of relu.
+        dense_out_result, _ = self.dense_out(tanh_result)
+
+        import os
+        debug_fname = os.environ["DEBUG_FNAME"]
+        if debug_fname != "None":
+            seq_rank = mpu.get_sequence_parallel_rank()
+            with open(debug_fname, "a") as f:
+                f.write(f"[{seq_rank}] output after head (from vit_backbone.py): {dense_out_result}\n")
         return dense_out_result
 
 
@@ -221,7 +240,6 @@ class VitBackbone(MegatronModule):
         self.transformer.set_input_tensor(input_tensor)
 
     def forward(self, input):
-        print(f"input: {input}")
         if self.pre_process:
             rearranged_input = einops.rearrange(
                 input,
@@ -299,8 +317,11 @@ class VitBackbone(MegatronModule):
 
         hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
 
-        if self.ds_sequence_parallel:
-            hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
+        # print(f"hidden_states b: {hidden_states.shape}")
+        # if self.ds_sequence_parallel:
+        #     from megatron.core import tensor_parallel 
+        #     hidden_states = tensor_parallel.gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
+        # print(f"hidden_states a: {hidden_states.shape}")
         # import os
         # debug_fname = os.environ['DEBUG_FNAME']
         # with open(debug_fname, "a") as f:
@@ -337,28 +358,24 @@ class VitBackbone(MegatronModule):
             # [s b h] => [b s h]
             if self.single_token_output:
                 hidden_states = hidden_states[0]
+                ## TODO: Let's use global mean pooling instead due to token length not matching up.
             else:
                 hidden_states = hidden_states.transpose(0, 1).contiguous()
 
+        ## Before head layer, parallelize across hidden dimension.
+        torch.distributed.broadcast(hidden_states, src=0, group=mpu.get_sequence_parallel_group()) ## TODO: Remove this if you are using global mean pool instead of clf token. I think
+        ## this cuts of other SP rank's data except for the main one, which is inoptimal but will do for now. 
+        # if self.ds_sequence_parallel:
+        #     sub_hidden_size = self.hidden_size // seq_parallel_world_size
+        #     sub_hid_start = seq_parallel_world_rank * sub_hidden_size
+        #     sub_hid_end = (seq_parallel_world_rank + 1) * sub_hidden_size
+        #     hidden_states = hidden_states[:, sub_hid_start:sub_hid_end] ## b, h/SP
+
+
+        import os
+        debug_fname = os.environ["DEBUG_FNAME"]
+        if debug_fname != "None":
+            with open(debug_fname, "a") as f:
+                f.write(f"[{mpu.get_sequence_parallel_rank()}] First token before MLP_head: {hidden_states}\n")
+
         return hidden_states
-    
-
-def gather_from_sequence_parallel_group(input_):
-    """Gather tensors and concatinate along the first dimension."""
-    from megatron.core.parallel_state import get_sequence_parallel_group, get_sequence_parallel_world_size
-    from deepspeed.accelerator import get_accelerator
-
-    world_size = get_sequence_parallel_world_size()
-    if world_size == 1:
-        # Bypass the function if we are using only 1 GPU.
-        return input_
-
-    dim_size = list(input_.size())
-    dim_size[0] = dim_size[0] * world_size
-
-    output = torch.empty(dim_size, dtype=input_.dtype,
-                         device=get_accelerator().current_device_name())
-    # torch.distributed._all_gather_base(output, input_.contiguous(),
-    torch.distributed.all_gather_into_tensor(output, input_.contiguous(),
-                                       group=get_sequence_parallel_group())
-    return output

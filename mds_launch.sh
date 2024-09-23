@@ -17,9 +17,9 @@ export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
 SCRIPT_DIR=$(dirname $0)
 PYTHONPATH=$og_PYTHONPATH
 
-# TEMP_DS=$HOME/DeepSpeed ##TODO: Remove later.
+TEMP_DS=$HOME/DeepSpeed ##TODO: Remove later.
 # TEMP_DS=/soft/applications/conda/2024-04-29/mconda3/lib/python3.11/site-packages/
-# PYTHONPATH="$TEMP_DS:${PYTHONPATH}" ##TODO: Remove later.
+PYTHONPATH="$TEMP_DS:${PYTHONPATH}" ##TODO: Remove later.
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Adding MEGATRON to pypath ## This should be done automatically? 
 
 ## HOST NODE
@@ -43,8 +43,8 @@ echo "PYTHON PATH: $PYTHONPATH"
      # --train-iters ${TRAIN_ITERS} \
      # --lr-warmup-iters ${LR_WARMUP_ITERS} \
      # --use-flash-attn-v1 \
-     # --use-flash-attn-v2 \
 CLASSIFIER_ARGS="
+     --use-flash-attn-v2 \
      $no_pipeline_parallel \
      --pipeline-model-parallel-size ${PP} \
      --ds-sequence-parallel-size ${SP} \

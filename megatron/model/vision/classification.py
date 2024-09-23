@@ -33,7 +33,7 @@ class VitClassificationModel(MegatronModule):
         
         if self.post_process:
             if not self.finetune:
-                self.head = VitMlpHead(self.hidden_size, self.num_classes)
+                self.head = VitMlpHead(self.hidden_size, self.num_classes, config=config)
             else:
                 self.head = get_linear_layer(
                     self.hidden_size,

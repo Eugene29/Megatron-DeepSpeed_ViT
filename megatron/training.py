@@ -708,31 +708,54 @@ def train_step(forward_step_func, data_iterator,
     if args.timing_log_level < 2:
         config.timers = None
 
+    # losses_reduced = forward_backward_func(
+    #     forward_step_func=forward_step_func,
+    #     data_iterator=data_iterator,
+    #     model=model,
+    #     num_microbatches=get_num_microbatches(),
+    #     seq_length=args.seq_length,
+    #     micro_batch_size=args.micro_batch_size,
+    #     decoder_seq_length=args.decoder_seq_length,
+    #     forward_only=False)
+
+    model[0].eval()
+    torch.manual_seed(32337)
+    input_tensor = (torch.randn(4, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device()), torch.tensor([1] * 4))
     losses_reduced = forward_backward_func(
         forward_step_func=forward_step_func,
-        data_iterator=data_iterator,
+        data_iterator=[iter([input_tensor])],
         model=model,
         num_microbatches=get_num_microbatches(),
         seq_length=args.seq_length,
         micro_batch_size=args.micro_batch_size,
         decoder_seq_length=args.decoder_seq_length,
         forward_only=False)
-
-    model[0].eval()
-    torch.manual_seed(31337)
-    input_tensor = torch.randn(1, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device())
-    output1 = model[0](input_tensor)
-    # output2 = model[0](input_tensor)
-    # print(f"output1: {output1}")
-    # print(f"output2: {output2}")
-    # reproduciblility = f"torch all: torch.eq(output1, output2): {torch.all(torch.eq(output1, output2))}"
+    
+    # input_tensor = torch.randn(1, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device())
+    # output = model[0](input_tensor)
+    
+    # with open(debug_fname, "a") as f:
+    #     import megatron.core.parallel_state as mpu
+    #     seq_rank = mpu.get_sequence_parallel_rank()
+    #     f.write(f"[{seq_rank}] averaged loss: {losses_reduced}\n")
 
     import os
     debug_fname = os.environ['DEBUG_FNAME']
-    if torch.distributed.get_rank()==0:
+    import megatron.core.parallel_state as mpu
+    seq_rank = mpu.get_sequence_parallel_rank()
+    # if seq_rank==0:
+    ## TODO: maybe the other ranks have different gradients when you used vocab_parallel?
+    if debug_fname != "None":
+        if torch.distributed.get_rank()==0:
+            with open(debug_fname, "a") as f:
+                # f.write(f"output: {output}\n")
+                f.write(f"\n\n\n\ninput tensor: {input_tensor}")
+
         with open(debug_fname, "a") as f:
-            # f.write(f"What's in losses_reduced?: {losses_reduced}")
-            # f.write(f"output1: {output1}")
+            # f.write(f"output: {output}\n")
+            # f.write(f"\n\n\n\n[{seq_rank}] losses_reduced (from training.py): {losses_reduced}")
+            f.write(f"\n\n\n\n-------------------------------------------\nGradients:")
+
             for name, param in model[0].named_parameters():
                 grad = deepspeed.utils.safe_get_full_grad(param)
                 f.write(f"name: {name}, param: {grad}")
@@ -742,7 +765,7 @@ def train_step(forward_step_func, data_iterator,
     #     for name, param in model[0].named_parameters():
     #         f.write(f"name: {name}, param: {param}")
 
-    raise KeyError("break")
+    raise KeyboardInterrupt("break")
 
 
     # reset timers if necessary

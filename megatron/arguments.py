@@ -50,6 +50,8 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     # Custom arguments.
     if extra_args_provider is not None:
         parser = extra_args_provider(parser)
+    parser.add_argument("--use_unifiedSP", action="store_true")
+    parser.add_argument("--use_wandb", action="store_true")
 
     parser = deepspeed.add_config_arguments(parser)
 
@@ -61,6 +63,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
 
     ## Custom arguments 2.
     args.dataset = os.environ["DATA"]
+
 
     # helper argument to set deepspeed pipeline parallel or not
     args.ds_pipeline_enabled = not args.no_pipeline_parallel

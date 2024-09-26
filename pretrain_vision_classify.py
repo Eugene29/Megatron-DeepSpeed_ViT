@@ -94,10 +94,10 @@ def loss_func(labels, output_tensor):
     #     return _GatherFromSequenceParallelRegion.apply(input_, tensor_parallel_output_grad)
 
     seq_rank = mpu.get_sequence_parallel_rank()
+    seq_world_size = mpu.get_sequence_parallel_world_size()
     # # print(f"seq_rank: {mpu.get_sequence_parallel_rank()}")
     # logits = output_tensor.contiguous().float()
     # # print(f"logits: {logits}")
-    # loss = F.cross_entropy(logits, labels)
     # args = get_args()
     # labels = F.one_hot(labels, num_classes=args.num_classes)
     # labels = labels.unsqueeze(0)
@@ -115,13 +115,22 @@ def loss_func(labels, output_tensor):
     #     dist.broadcast(logits, src=0, group=mpu.get_sequence_parallel_group())
     # from megatron.core.sequence_parallel import vocab_sequence_parallel_cross_entropy
     # from megatron.core.tensor_parallel import vocab_parallel_cross_entropy
-    loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
+    if seq_world_size > 1:
+        # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
+        loss = F.cross_entropy(logits, labels) / seq_world_size ## Currently backwards are called by 4 GPUS (same loss)?
+    else:
+        loss = F.cross_entropy(logits, labels)
+
     import os
     debug_fname = os.environ["DEBUG_FNAME"]
     if debug_fname != "None":
+        if seq_rank==0:
+            torch.save(output_tensor, f"{debug_fname}.pt")
+
         with open(debug_fname, "a") as f:
             f.write(f"[{seq_rank}] output after head: {output_tensor}\n")
-            f.write(f"[{seq_rank}] real losses_reduced: {loss}\n")
+            f.write(f"[{seq_rank}] output after head shape: {output_tensor.shape}\n")
+            f.write(f"[{seq_rank}] loss: {loss}\n")
 
     # if seq_rank==0:
     #     logits = logits.T

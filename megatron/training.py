@@ -708,53 +708,51 @@ def train_step(forward_step_func, data_iterator,
     if args.timing_log_level < 2:
         config.timers = None
 
-    # losses_reduced = forward_backward_func(
-    #     forward_step_func=forward_step_func,
-    #     data_iterator=data_iterator,
-    #     model=model,
-    #     num_microbatches=get_num_microbatches(),
-    #     seq_length=args.seq_length,
-    #     micro_batch_size=args.micro_batch_size,
-    #     decoder_seq_length=args.decoder_seq_length,
-    #     forward_only=False)
 
-    model[0].eval()
-    torch.manual_seed(32337)
-    input_tensor = (torch.randn(4, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device()), torch.tensor([1] * 4))
-    losses_reduced = forward_backward_func(
-        forward_step_func=forward_step_func,
-        data_iterator=[iter([input_tensor])],
-        model=model,
-        num_microbatches=get_num_microbatches(),
-        seq_length=args.seq_length,
-        micro_batch_size=args.micro_batch_size,
-        decoder_seq_length=args.decoder_seq_length,
-        forward_only=False)
     
-    # input_tensor = torch.randn(1, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device())
-    # output = model[0](input_tensor)
-    
-    # with open(debug_fname, "a") as f:
-    #     import megatron.core.parallel_state as mpu
-    #     seq_rank = mpu.get_sequence_parallel_rank()
-    #     f.write(f"[{seq_rank}] averaged loss: {losses_reduced}\n")
-
     import os
     debug_fname = os.environ['DEBUG_FNAME']
     import megatron.core.parallel_state as mpu
     seq_rank = mpu.get_sequence_parallel_rank()
+
+    if debug_fname == "None":
+        losses_reduced = forward_backward_func(
+            forward_step_func=forward_step_func,
+            data_iterator=data_iterator,
+            model=model,
+            num_microbatches=get_num_microbatches(),
+            seq_length=args.seq_length,
+            micro_batch_size=args.micro_batch_size,
+            decoder_seq_length=args.decoder_seq_length,
+            forward_only=False)
+        
+    else:
+        model[0].eval()
+        torch.manual_seed(33333)
+        size = 16
+        input_tensor = (torch.randn(size, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device()), torch.tensor([1] * size))
+        losses_reduced = forward_backward_func(
+            forward_step_func=forward_step_func,
+            data_iterator=[iter([input_tensor])],
+            model=model,
+            num_microbatches=get_num_microbatches(),
+            seq_length=args.seq_length,
+            micro_batch_size=args.micro_batch_size,
+            decoder_seq_length=args.decoder_seq_length,
+            forward_only=False)
+    
+    # input_tensor = torch.randn(32, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device())
+    # output = model[0](input_tensor)
+    #     with open(debug_fname, "a") as f:
+    #         f.write(f"[{seq_rank}] output: {output}\n")
+
     # if seq_rank==0:
     ## TODO: maybe the other ranks have different gradients when you used vocab_parallel?
-    if debug_fname != "None":
-        if torch.distributed.get_rank()==0:
-            with open(debug_fname, "a") as f:
-                # f.write(f"output: {output}\n")
-                f.write(f"\n\n\n\ninput tensor: {input_tensor}")
-
         with open(debug_fname, "a") as f:
             # f.write(f"output: {output}\n")
+            f.write(f"\n\n\n\n[{seq_rank}] input tensor: {input_tensor}")
             # f.write(f"\n\n\n\n[{seq_rank}] losses_reduced (from training.py): {losses_reduced}")
-            f.write(f"\n\n\n\n-------------------------------------------\nGradients:")
+            f.write(f"\n\n\n\n-------------------------------------------\n[{seq_rank}] Gradients:")
 
             for name, param in model[0].named_parameters():
                 grad = deepspeed.utils.safe_get_full_grad(param)
@@ -764,8 +762,7 @@ def train_step(forward_step_func, data_iterator,
     # # with open("debug/weights_DP.txt", "w") as f:
     #     for name, param in model[0].named_parameters():
     #         f.write(f"name: {name}, param: {param}")
-
-    raise KeyboardInterrupt("break")
+        raise KeyboardInterrupt("break")
 
 
     # reset timers if necessary

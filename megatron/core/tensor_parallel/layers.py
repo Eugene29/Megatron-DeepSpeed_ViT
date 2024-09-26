@@ -518,22 +518,24 @@ class ColumnParallelLinear(torch.nn.Module):
                  keep_master_weight_for_test=False,
                  skip_bias_add=False,
                  skip_weight_param_allocation: bool=False,
-                 moe=False, enable_expert_tensor_parallelism=False, for_seq_parallel=False):
+                 moe=False, enable_expert_tensor_parallelism=False, forSP=False):
         torch.nn.Module.__init__(self)
+        self.forSP = forSP
 
         # Keep input parameters
         self.input_size = input_size
         self.output_size = output_size
         self.gather_output = gather_output
         # Divide the weight matrix along the last dimension.
-        if for_seq_parallel:
-            from megatron.core.parallel_state import get_sequence_parallel_world_size
-            world_size = get_sequence_parallel_world_size()
-        elif moe and (not enable_expert_tensor_parallelism):
+        if moe and (not enable_expert_tensor_parallelism):
             world_size = 1
             self.is_expert_without_slicing = True
         else:
-            world_size = get_tensor_model_parallel_world_size()
+            if self.forSP:
+                from megatron.core.parallel_state import get_sequence_parallel_world_size
+                world_size = get_sequence_parallel_world_size()
+            else:
+                world_size = get_tensor_model_parallel_world_size()
             self.is_expert_without_slicing = False
         self.output_size_per_partition = divide(output_size, world_size)
         self.skip_bias_add = skip_bias_add
@@ -554,12 +556,32 @@ class ColumnParallelLinear(torch.nn.Module):
                         self.output_size_per_partition, 0, init_method,
                         stride=stride, return_master_weight=keep_master_weight_for_test)
             else:
-                self.weight = Parameter(torch.empty(
+                if self.forSP:
+                    from megatron.core.parallel_state import get_sequence_parallel_world_size as seq_size, get_sequence_parallel_rank as seq_rank
+                    self.weight = Parameter(torch.empty(
+                        self.output_size, self.input_size, ## Full size
+                        device=get_accelerator().current_device_name(), dtype=config.params_dtype))
+                    if config.perform_initialization:
+                        _initialize_affine_weight_gpu(self.weight, init_method,
+                                                    partition_dim=1, stride=stride)
+                    print(f"\njust initialized {self.weight}")
+                    assert self.weight.size(0) % seq_size() == 0, "divisibility: should've already been checked earlier I believe"
+                    row_block_length = self.weight.size(0) // seq_size()
+                    slice_strt = seq_rank() * row_block_length
+                    slice_end = (seq_rank() + 1) * row_block_length
+                    # print(f"slice_strt: {slice_strt}")
+                    # print(f"slice_end: {slice_end}")
+                    self.weight = Parameter(self.weight[slice_strt:slice_end, :].contiguous())
+                    # self.weight = Parameter(torch.ones(self.output_size, self.input_size).contiguous())
+                    print(f"\nself.weight: {self.weight}")
+
+                else:
+                    self.weight = Parameter(torch.empty(
                     self.output_size_per_partition, self.input_size,
                     device=get_accelerator().current_device_name(), dtype=config.params_dtype))
-                if config.perform_initialization:
-                    _initialize_affine_weight_gpu(self.weight, init_method,
-                                                  partition_dim=0, stride=stride)
+                    if config.perform_initialization:
+                        _initialize_affine_weight_gpu(self.weight, init_method,
+                                                    partition_dim=0, stride=stride)
         else:
             self.weight = None
 
@@ -656,10 +678,24 @@ class ColumnParallelLinear(torch.nn.Module):
             async_grad_allreduce=self.async_tensor_model_parallel_allreduce,
             sequence_parallel=self.sequence_parallel
         )
+        if self.forSP:
+            print(f"\nweight in forward: {weight}")
+            print(f"\nself.weight double check: {self.weight}")
+
+        import os
+        debug_fname = os.environ["DEBUG_FNAME"]
+
+        from megatron.core.parallel_state import get_sequence_parallel_rank as seq_rank
+        if debug_fname != "None" and self.forSP:
+            with open(debug_fname, "a") as f:
+                f.write(f"\n[{seq_rank()}]: output before: {output_parallel}")
         if self.gather_output and not self.is_expert_without_slicing:
             # All-gather across the partitions.
             assert not self.sequence_parallel
-            output = gather_from_tensor_model_parallel_region(output_parallel)
+            output = gather_from_tensor_model_parallel_region(output_parallel, use_SP_group=True)
+            if debug_fname != "None" and self.forSP:
+                with open(debug_fname, "a") as f:
+                    f.write(f"\n[{seq_rank()}]: output after gathering: {output}")
         else:
             output = output_parallel
         output_bias = self.bias if self.skip_bias_add else None

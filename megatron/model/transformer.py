@@ -19,6 +19,7 @@ from megatron.model.fused_softmax import FusedScaleMaskSoftmax
 from megatron.model.fused_bias_gelu import bias_gelu_impl
 from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
 from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
+import megatron.core.parallel_state as mpu
 import deepspeed
 from deepspeed.moe.layer import MoE
 from deepspeed.accelerator import get_accelerator
@@ -403,6 +404,20 @@ class FlashSelfAttention(torch.nn.Module):
 
     ## Add bathc_dim_idx as it is inputted later on. 
     def forward(self, q, k, v):
+        from flash_attn import flash_attn_func
+        out_ref, _, _ = flash_attn_func(
+            q,
+            k,
+            v,
+            dropout_p=0.0,
+            causal=False,
+            window_size=(-1, -1),
+            alibi_slopes=None,
+            deterministic=True,
+            return_attn_probs=True,
+        )
+        return out_ref
+    
     # def forward(self, q, k, v, batch_dim_idx):
         """Implements the multihead softmax attention.
         Arguments
@@ -600,17 +615,41 @@ class ParallelAttention(MegatronModule):
                 gather_output=False)
 
         # Currently FlashAttention only works with causal mask
+        self.causal = args.vision_backbone_type == "None" ## TODO: Double check that this is none when using LLMs
+        print(f"using causal: {self.causal}")
         if self.use_flash_attn_triton:
-            local_attn = FlashSelfAttentionTriton(causal=True, attention_dropout=args.attention_dropout)
+            local_attn = FlashSelfAttentionTriton(causal=self.causal, attention_dropout=args.attention_dropout)
         elif self.use_flash_attn:
-            local_attn = FlashSelfAttention(causal=False, attention_dropout=config.attention_dropout)
+            local_attn = FlashSelfAttention(causal=self.causal, attention_dropout=config.attention_dropout)
             # local_attn = FlashSelfAttention(causal=True, attention_dropout=config.attention_dropout)
         else:
             local_attn = CoreAttention(self.layer_number, config, self.attn_mask_type)
 
         self.enable_ds_sequence_parallel = parallel_state.get_sequence_parallel_world_size() > 1 \
                                            or args.force_ds_sequence_parallel
-        if self.enable_ds_sequence_parallel:
+        
+        if args.use_unifiedSP:
+            from yunchang import (
+                AsyncLongContextAttention,
+                LongContextAttention,
+                UlyssesAttention,
+                set_seq_parallel_pg,
+            )
+            ## Ulysses only
+            sp_pg = mpu.get_sequence_parallel_group()
+            self.dist_attn = UlyssesAttention(sequence_process_group=sp_pg, use_fa=args.use_flash_attn)
+
+            ## Unified SP
+            # use_ulysses_lowdim=False
+            # set_seq_parallel_pg(
+            #     args.ds_sequence_parallel_size, 1, args.rank, args.ds_sequence_parallel_size, use_ulysses_lowdim
+            # )
+            # self.dist_attn = LongContextAttention(ring_impl_type="basic")
+
+            # if args.use_async_all_to_all:
+            # longctx_attn = AsyncLongContextAttention(ring_impl_type=args.ring_impl_type)
+            # else:
+        elif self.enable_ds_sequence_parallel:
             assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
             assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
             self.dist_attn = DistributedAttention(
@@ -828,7 +867,34 @@ class ParallelAttention(MegatronModule):
             # otherwise, only relative positional embedding takes effect
             # value_layer = apply_rotary_pos_emb(value_layer, k_pos_emb)
 
-        if self.enable_ds_sequence_parallel:
+        args = get_args()
+        if args.use_unifiedSP:
+            query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous() for x in (query_layer, key_layer, value_layer)]
+            # context_layer = self.dist_attn(
+            #     query_layer,
+            #     key_layer,
+            #     value_layer,
+            #     dropout_p=args.attention_dropout,
+            #     causal=self.causal,
+            #     deterministic=True, ## TODO: True for Now?
+            #     return_attn_probs=False,
+            # )
+
+            print(f"query_layer.shape: {query_layer.shape}")
+            context_layer = self.dist_attn(
+                query_layer,
+                key_layer,
+                value_layer,
+                dropout_p=0.0,
+                causal=False,
+                # dropout_p=args.attention_dropout,
+                # causal=self.causal,
+                window_size=(-1, -1),
+                alibi_slopes=None,
+                deterministic=True,
+                return_attn_probs=False,
+            )
+        elif self.enable_ds_sequence_parallel:
             batch_dim_idx = 1
             if self.use_flash_attn:
                 if not self.use_flash_attn_triton:
@@ -841,8 +907,8 @@ class ParallelAttention(MegatronModule):
                 if not self.use_flash_attn_triton:
                     context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
             else:
-                # context_layer = self.dist_attn(query_layer, key_layer, value_layer, attention_mask=attention_mask)
-                context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx=batch_dim_idx, attention_mask=attention_mask)
+                context_layer = self.dist_attn(query_layer, key_layer, value_layer, attention_mask=attention_mask)
+                # context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx=batch_dim_idx, attention_mask=attention_mask)
         else:
             if self.use_flash_attn:
                 if not self.use_flash_attn_triton:
@@ -853,7 +919,7 @@ class ParallelAttention(MegatronModule):
                     context_layer = self.core_attention_flash(query_layer, key_layer, value_layer)
                 else:
                     with tensor_parallel.get_cuda_rng_tracker().fork():
-                        context_layer = self.core_attention_flash(query_layer, key_layer, value_layer)
+                        context_layer = self.core_attention_flash(query_layer, key_layer, value_layer) ## Here we might need batch_idx_dim
 
                 if not self.use_flash_attn_triton:
                     context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
@@ -868,9 +934,17 @@ class ParallelAttention(MegatronModule):
         # =================
         # Output. [sq, b, h]
         # =================
+        if args.use_unifiedSP:
+        # if args.use_unifiedSP and self.enable_ds_sequence_parallel:
+            # context_layer = context_layer.flatten(start_dim=-2)
+            context_layer = rearrange(context_layer, ("s b hc hd -> b s (hc hd)")).contiguous()
 
         output, bias = self.dense(context_layer)
 
+        # print(f"context_layer.shape: {context_layer.shape}")
+        # print(f"output.shape: {output.shape}")
+        # print(f"bias.shape: {bias.shape}")
+        # raise KeyboardInterrupt("BReAK")
         return output, bias
 
 
@@ -1268,14 +1342,32 @@ class ParallelTransformerLayer(MegatronModule):
 
         # Layer norm at the beginning of the transformer layer.
         layernorm_output = self.input_layernorm(hidden_states)
+        # layernorm_output = hidden_states
+
+        import os
+        debug_fname = os.environ['DEBUG_FNAME']
+        seq_rank = mpu.get_sequence_parallel_rank()
 
         # Self attention.
-        attention_output, attention_bias = \
-            self.self_attention(
-                layernorm_output,
-                attention_mask,
-                inference_params=inference_params,
-                rotary_pos_emb=rotary_pos_emb)
+        ## TODO: TEST
+        # attention_output, attention_bias = \
+        #     self.self_attention(
+        #         layernorm_output,
+        #         attention_mask,
+        #         inference_params=inference_params,
+        #         rotary_pos_emb=rotary_pos_emb)
+        attention_output = layernorm_output
+        attention_bias = None
+        
+        if debug_fname != "None":
+            with open(debug_fname, "a") as f:
+                f.write(f"\n\n\n\n")
+                f.write(f"[{seq_rank}, l={self.layer_number}] Layernorm output: {layernorm_output}\n")
+                f.write(f"[{seq_rank}, l={self.layer_number}] Layernorm output shape: {layernorm_output.shape}\n")
+                # f.write(f"[{seq_rank}, l={self.layer_number}] ATT output: {attention_output}\n")
+                # f.write(f"[{seq_rank}, l={self.layer_number}] ATT output shape: {attention_output.shape}\n")
+                # f.write(f"[{seq_rank}, l={self.layer_number}] ATT Bias: {attention_bias}\n")
+                # f.write(f"[{seq_rank}, l={self.layer_number}] ATT Bias shape: {attention_bias.shape}\n")
 
         # Residual connection.
         if self.apply_residual_connection_post_layernorm:
@@ -1392,6 +1484,16 @@ class ParallelTransformerLayer(MegatronModule):
                                               p=self.hidden_dropout,
                                               training=self.training)
             output = residual + self.drop_path(out)
+
+        if debug_fname != "None":
+            with open(debug_fname, "a") as f:
+                f.write(f"\n\n\n\n")
+                f.write(f"[{seq_rank}] post_attention_layernorm_output: {layernorm_output}") # post_attention_layernorm(layernorm_input)
+                f.write(f"[{seq_rank}] layernorm_input: {layernorm_input}")
+                f.write(f"[{seq_rank}] mlp_bias: {mlp_bias}")
+                f.write(f"[{seq_rank}] mlp_output: {mlp_output}")
+                f.write(f"[{seq_rank}] output: {output}")
+            # raise KeyboardInterrupt("BREKAJRIOA")
 
         if self.layer_type == LayerType.retro_decoder_with_retriever:
             return output, retriever_output, moe_loss

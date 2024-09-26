@@ -34,37 +34,34 @@ class VitMlpHead(MegatronModule):
     """
 
     def __init__(self, hidden_size, num_classes, config):
-        from megatron.core.tensor_parallel import ColumnParallelLinear
+        # from megatron.core.tensor_parallel import ColumnParallelLinear
         super(VitMlpHead, self).__init__()
         # self.dense_in = torch.nn.Linear(hidden_size, hidden_size)
         ## TODO: Is this agnostic of parallelism?
         # print(f"self.config: {config}")
         # print(f"self.config.init_method: {config.init_method}")
-        self.dense_in = ColumnParallelLinear(hidden_size, hidden_size, config=config, init_method=config.init_method, gather_output=True)
         # self.relu = torch.nn.ReLU()
-        # self.dense_out = torch.nn.Linear(hidden_size, num_classes)
-        self.dense_out = ColumnParallelLinear(hidden_size, num_classes, config=config, init_method=config.init_method, gather_output=False)
+        self.dense_in = torch.nn.Linear(hidden_size, hidden_size)
+        self.dense_out = torch.nn.Linear(hidden_size, num_classes)
+        # self.dense_in = ColumnParallelLinear(hidden_size, hidden_size, config=config, init_method=config.init_method, gather_output=True, forSP=True)
+        # self.dense_out = ColumnParallelLinear(hidden_size, num_classes, config=config, init_method=config.init_method, gather_output=False, forSP=True)
         torch.nn.init.constant_(self.dense_out.bias, -10)
-
-        # super(VitMlpHead, self).__init__(share_word_embeddings=False)
-        # self.tensor_model_parallel_size = get_tensor_model_parallel_world_size()
-        # from megatron.tensor_parallel import CollumParallelLinear
-        # self.dense_in = ColumnParallelLinear(hidden_size, hidden_size,gather_output=True)
-        # self.dense_out = ColumnParallelLinear(hidden_size, num_classes, gather_output=False)
 
     def forward(self, hidden_states):
         # hidden_states: [b, 1, h]
         # sequence_index: index of the token to pool.
-        dense_in_result, _ = self.dense_in(hidden_states) ## TODO: Isn't a combination of Row and Column Parallel Linear better? 
+        # dense_in_result, _ = self.dense_in(hidden_states) ## TODO: Isn't a combination of Row and Column Parallel Linear better?
+        dense_in_result = self.dense_in(hidden_states) ## TODO: Isn't a combination of Row and Column Parallel Linear better? 
         tanh_result = torch.tanh(dense_in_result) ## wtf, tanh is called instead of relu.
-        dense_out_result, _ = self.dense_out(tanh_result)
+        # dense_out_result, _ = self.dense_out(tanh_result)
+        dense_out_result = self.dense_out(tanh_result)
 
-        import os
-        debug_fname = os.environ["DEBUG_FNAME"]
-        if debug_fname != "None":
-            seq_rank = mpu.get_sequence_parallel_rank()
-            with open(debug_fname, "a") as f:
-                f.write(f"[{seq_rank}] output after head (from vit_backbone.py): {dense_out_result}\n")
+        # import os
+        # debug_fname = os.environ["DEBUG_FNAME"]
+        # if debug_fname != "None":
+        #     seq_rank = mpu.get_sequence_parallel_rank()
+        #     with open(debug_fname, "a") as f:
+        #         f.write(f"[{seq_rank}] output after head (from vit_backbone.py): {dense_out_result}\n")
         return dense_out_result
 
 
@@ -315,6 +312,12 @@ class VitBackbone(MegatronModule):
         #         f.write(f"first hidden_state: {hidden_states}")
         #         f.write(f"first hidden_state shape: {hidden_states.shape}")
 
+        import os
+        debug_fname = os.environ["DEBUG_FNAME"]
+        if debug_fname != "None":
+            with open(debug_fname, "a") as f:
+                f.write(f"\n[{mpu.get_sequence_parallel_rank()}] Before Transformer Layers: {hidden_states}\n")
+                f.write(f"\n[{mpu.get_sequence_parallel_rank()}] Before Transformer Layers shape: {hidden_states.shape}\n")
         hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
 
         # print(f"hidden_states b: {hidden_states.shape}")
@@ -362,9 +365,25 @@ class VitBackbone(MegatronModule):
             else:
                 hidden_states = hidden_states.transpose(0, 1).contiguous()
 
+        # args = get_args()
+        # if args.use_unifiedSP:
+        #     hidden_states
+
         ## Before head layer, parallelize across hidden dimension.
-        torch.distributed.broadcast(hidden_states, src=0, group=mpu.get_sequence_parallel_group()) ## TODO: Remove this if you are using global mean pool instead of clf token. I think
-        ## this cuts of other SP rank's data except for the main one, which is inoptimal but will do for now. 
+        if self.ds_sequence_parallel:
+            ## round to the src rank
+            ## TODO: replace this with get data parallel source rank? 
+            world_rank = mpu.get_sequence_data_parallel_rank()
+            remainder = world_rank % seq_parallel_world_size
+            seq_src_rank = world_rank - remainder 
+            with torch.no_grad():
+                torch.distributed.broadcast(hidden_states, src=seq_src_rank, group=mpu.get_sequence_parallel_group()) ## TODO: Remove this if you are using global mean pool instead of clf token. I think
+    
+        ## this cuts of other SP rank's graident except for the main one??, which is inoptimal but will do for now. 
+        # print(f"hidden_states.shape: {hidden_states.shape}")
+        # raise KeyboardInterrupt("break")
+
+        # torch.distributed.broadcast(hidden_states, src=3, group=mpu.get_sequence_parallel_group())
         # if self.ds_sequence_parallel:
         #     sub_hidden_size = self.hidden_size // seq_parallel_world_size
         #     sub_hid_start = seq_parallel_world_rank * sub_hidden_size
@@ -376,6 +395,15 @@ class VitBackbone(MegatronModule):
         debug_fname = os.environ["DEBUG_FNAME"]
         if debug_fname != "None":
             with open(debug_fname, "a") as f:
-                f.write(f"[{mpu.get_sequence_parallel_rank()}] First token before MLP_head: {hidden_states}\n")
+                f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head: {hidden_states}\n")
+                f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head shape: {hidden_states.shape}\n")
+
 
         return hidden_states
+    
+
+
+
+# >>> DP = torch.load("/home/eku/polaris/Megatron-DeepSpeed_ViT/debug/output_DP.txt.pt")
+# >>> SP = torch.load("/home/eku/polaris/Megatron-DeepSpeed_ViT/debug/output_SP.txt.pt")
+# >>> torch.sum((DP - SP).abs(), dim=-1)

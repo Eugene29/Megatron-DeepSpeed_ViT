@@ -6,24 +6,26 @@ TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
 NHOSTS=$(wc -l < "${PBS_NODEFILE}")
 NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 
-## CUDA DEVICE (for experiments)
-# export CUDA_VISIBLE_DEVICES=0,1
-# NGPU_PER_HOST=2
-# NGPUS=2
 
-DEBUG=DP
+export WANDB_MODE="disabled"
+DEBUG=${DEBUG:-"DP"}
 if [ $DEBUG == "SP" ]; then
+    ## CUDA DEVICE (for experiments)
+    export CUDA_VISIBLE_DEVICES=0,1
+    NGPU_PER_HOST=2
+    NGPUS=2
+
     ## SP
     ## PARALLELIZATION
-    export SP=${SP:-4} ## 1 if the var is not instantiated by mds_submit
+    export SP=${SP:-2} ## 1 if the var is not instantiated by mds_submit
     export PP=${PP:-1}
     export TP=${TP:-1}
     if [ $PP -eq 1 ]; then 
         export no_pipeline_parallel=--no-pipeline-parallel
     fi
 
-    # export DEBUG_FNAME=None
     export DEBUG_FNAME=debug/output_SP.txt
+    # export DEBUG_FNAME=None
     > $DEBUG_FNAME
 
 else
@@ -41,8 +43,8 @@ else
     if [ $PP -eq 1 ]; then 
         export no_pipeline_parallel=--no-pipeline-parallel
     fi
-    # export DEBUG_FNAME=None
     export DEBUG_FNAME=debug/output_DP.txt
+    # export DEBUG_FNAME=None
     > $DEBUG_FNAME
 fi
 

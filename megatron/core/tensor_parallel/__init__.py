@@ -19,7 +19,7 @@ from .mappings import (
     gather_from_sequence_parallel_region,
     scatter_to_tensor_model_parallel_region,
     scatter_to_sequence_parallel_region,
-    gather_from_sequence_parallel_group, ## special gather function for vit SP
+    # gather_from_sequence_parallel_group, ## special gather function for vit SP
 )
 
 from .random import (
@@ -58,7 +58,7 @@ __all__ = [
 #    "reduce_from_tensor_model_parallel_region",
     "scatter_to_tensor_model_parallel_region",
     "scatter_to_sequence_parallel_region",
-    "gather_from_sequence_parallel_group",
+    # "gather_from_sequence_parallel_group",
     # random.py
     "checkpoint",
     "get_cuda_rng_tracker",

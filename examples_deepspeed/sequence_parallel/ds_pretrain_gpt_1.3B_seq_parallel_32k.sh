@@ -295,8 +295,15 @@ megatron_options=" \
     --tensorboard-queue-size 1 \
     --log-timers-to-tensorboard \
     --log-batch-size-to-tensorboard \
+    --no-masked-softmax-fusion \
+    --no-gradient-accumulation-fusion \
+    --no-bias-gelu-fusion \
+    --no-bias-dropout-fusion \
+    --accumulate-allreduce-grads-in-fp32 \
     --log-validation-ppl-to-tensorboard \
     --tensorboard-dir ${tensorboard_path}"
+
+export DEBUG_FNAME="None"
 
 if [ "${activation_checkpoint}" = "true" ]; then
 megatron_options="${megatron_options} \

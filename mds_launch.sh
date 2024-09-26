@@ -77,6 +77,8 @@ CLASSIFIER_ARGS="
      --ffn-hidden-size ${FFN_HSIZE:-HSIZE} \
      --save /home/eku/polaris/save \
      --train-samples ${TRAIN_SAMPLES} \
+     --retro-encoder-attention-dropout 0.0 \
+     --retro-encoder-hidden-dropout 0.0 \
 "
 
 DATA_ARGS="

@@ -1010,7 +1010,7 @@ class ParallelTransformerLayer(MegatronModule):
                     config.hidden_size,
                     eps=config.layernorm_epsilon,
                     no_persist_layer_norm=args.no_persist_layer_norm,
-                    sequence_parallel=config.sequence_parallel, ##LayerNorm class inherently takes care of seq parallel layer normalization.
+                    sequence_parallel=config.sequence_parallel,
                     apply_layernorm_1p=args.apply_layernorm_1p,
                     mem_efficient_ln=args.mem_efficient_ln)
             else:
@@ -1341,8 +1341,8 @@ class ParallelTransformerLayer(MegatronModule):
         # hidden_states: [s, b, h]
 
         # Layer norm at the beginning of the transformer layer.
-        layernorm_output = self.input_layernorm(hidden_states)
-        # layernorm_output = hidden_states
+        # layernorm_output = self.input_layernorm(hidden_states)
+        layernorm_output = hidden_states
 
         import os
         debug_fname = os.environ['DEBUG_FNAME']
@@ -1350,14 +1350,14 @@ class ParallelTransformerLayer(MegatronModule):
 
         # Self attention.
         ## TODO: TEST
-        # attention_output, attention_bias = \
-        #     self.self_attention(
-        #         layernorm_output,
-        #         attention_mask,
-        #         inference_params=inference_params,
-        #         rotary_pos_emb=rotary_pos_emb)
-        attention_output = layernorm_output
-        attention_bias = None
+        attention_output, attention_bias = \
+            self.self_attention(
+                layernorm_output,
+                attention_mask,
+                inference_params=inference_params,
+                rotary_pos_emb=rotary_pos_emb)
+        # attention_output = layernorm_output
+        # attention_bias = None
         
         if debug_fname != "None":
             with open(debug_fname, "a") as f:
@@ -1403,7 +1403,8 @@ class ParallelTransformerLayer(MegatronModule):
             layernorm_input = residual + self.drop_path(out)
 
         # Layer norm post the self attention.
-        layernorm_output = self.post_attention_layernorm(layernorm_input)
+        # layernorm_output = self.post_attention_layernorm(layernorm_input)
+        layernorm_output = layernorm_input
 
         # Cross attention.
         if self.layer_type == LayerType.encoder:
@@ -1446,6 +1447,8 @@ class ParallelTransformerLayer(MegatronModule):
             mlp_output, mlp_bias = self.mlp(layernorm_output)
         else:
             mlp_output, moe_loss, _ = self.mlp(layernorm_output)
+        mlp_output = layernorm_output
+        mlp_bias = None
 
         # when aggregated_moe_loss received, returned moe_loss is the aggregated moe loss
         if aggregated_moe_loss is not None:
@@ -2159,13 +2162,13 @@ class ParallelTransformer(MegatronModule):
                     self.microbatch_count += 1
 
         # Final layer norm.
-        if self.post_process and self.post_layer_norm:
-            # TODO: Below old DeepSpeed code are commented because it's unsure whether
-            # it is still relevant.
-            # if not self.ds_inference:
-            #     # Reverting data format change [s b h] --> [b s h].
-            #     hidden_states = hidden_states.transpose(0, 1).contiguous()
-            hidden_states = self.final_layernorm(hidden_states)
+        # if self.post_process and self.post_layer_norm:
+        #     # TODO: Below old DeepSpeed code are commented because it's unsure whether
+        #     # it is still relevant.
+        #     # if not self.ds_inference:
+        #     #     # Reverting data format change [s b h] --> [b s h].
+        #     #     hidden_states = hidden_states.transpose(0, 1).contiguous()
+        #     hidden_states = self.final_layernorm(hidden_states)
         
         # from megatron import print_rank_0
         # print_rank_0(f"final hidden state before head: {hidden_states.shape}")

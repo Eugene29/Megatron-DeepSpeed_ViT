@@ -237,6 +237,7 @@ class VitBackbone(MegatronModule):
         self.transformer.set_input_tensor(input_tensor)
 
     def forward(self, input):
+        # print_rank_0(f"input: {input.shape}")
         if self.pre_process:
             rearranged_input = einops.rearrange(
                 input,
@@ -256,11 +257,11 @@ class VitBackbone(MegatronModule):
             token_embeddings = concatenated_tokens + \
                     self.position_embeddings(self.position_ids[:, :concatenated_tokens.shape[1]])
             # [b, s, h] => [s, b, h]
-            token_embeddings = token_embeddings.transpose(0, 1).contiguous()
-            hidden_states = self.embedding_dropout(token_embeddings) 
+            # token_embeddings = token_embeddings.transpose(0, 1).contiguous()
+            hidden_states = token_embeddings.transpose(0, 1).contiguous()
+            # hidden_states = self.embedding_dropout(token_embeddings) 
             ##TODO: Possible Throughput Gains in the Future
             ##1. Could run preprocess first on rank 0, using torch.barrier(), try tensor_parallel for boradcasting
-            ##2. Should I do dropout before or after sequence splitting? 
             ##3. Even better, I could split before linear encoding or before patchifying.
             ##NOTE: Priming DS Seq. Parallelism by splitting [s, b, h] -> [s/sp, b, h]
 
@@ -273,7 +274,7 @@ class VitBackbone(MegatronModule):
             # args = get_args()
             # print(f"args.rank: {args.rank}, hidden_states (before chunking): {hidden_states.shape}")
             # print(F"hidden_states.shape: {hidden_states.shape}")
-            hidden_states = hidden_states[:-1] ##TODO: EXCLUDE LAST SEQUENCE TOKEN TO MATCH UP DIMENSIONALITY FOR NOW...
+            # hidden_states = hidden_states[:-1] ##TODO: EXCLUDE LAST SEQUENCE TOKEN TO MATCH UP DIMENSIONALITY FOR NOW...
             if self.ds_sequence_parallel:
                 seq_parallel_world_size = mpu.get_sequence_parallel_world_size()
                 seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
@@ -283,7 +284,7 @@ class VitBackbone(MegatronModule):
                 ## This should terminate it, and if you want more seq_length...
                 sub_seq_length = self.seq_length // seq_parallel_world_size
                 sub_seq_start = seq_parallel_world_rank * sub_seq_length
-                ##TODO: (CRITICAL) Last Rank might hold more tokens. Allows sequence parallelism with undivisable seq_length
+                ##TODO: Enable undivisible SP? 
                 sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
                 # if seq_parallel_world_rank == seq_parallel_world_size-1:
                 #     print("hi")
@@ -293,11 +294,16 @@ class VitBackbone(MegatronModule):
                     # sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
                 # torch.distributed.barrier()
                 hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
+                # if seq_parallel_world_rank != seq_parallel_world_size - 1:
+                #     hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
+                # else:
+                #     hidden_states = hidden_states[sub_seq_start:, :, :]
                 # print(f"sub_seq_start, sub_seq_end: {sub_seq_start, sub_seq_end}")
                 # print(f"seq_parallel_world_rank: {seq_parallel_world_rank}")
                 # print(f"seq_parallel_world_rank: {seq_parallel_world_rank}")
                 # print(f"preprocessed hidden_states.shape: {hidden_states.shape}")
             # print(f"args.rank: {args.rank}, hidden_states (after chunking): {hidden_states.shape}")
+            hidden_states = self.embedding_dropout(hidden_states) 
         else:
             hidden_states = input
 
@@ -313,11 +319,13 @@ class VitBackbone(MegatronModule):
         #         f.write(f"first hidden_state shape: {hidden_states.shape}")
 
         import os
-        debug_fname = os.environ["DEBUG_FNAME"]
-        if debug_fname != "None":
+        debug_mode = "DEBUG_FNAME" in os.environ
+        if debug_mode:
+            debug_fname = os.environ["DEBUG_FNAME"]
             with open(debug_fname, "a") as f:
                 f.write(f"\n[{mpu.get_sequence_parallel_rank()}] Before Transformer Layers: {hidden_states}\n")
                 f.write(f"\n[{mpu.get_sequence_parallel_rank()}] Before Transformer Layers shape: {hidden_states.shape}\n")
+
         hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
 
         # print(f"hidden_states b: {hidden_states.shape}")
@@ -357,27 +365,34 @@ class VitBackbone(MegatronModule):
         # if mpu.get_sequence_parallel_rank != 0:
         #     return None
         
+        # print(f"hidden_states before post_process: {hidden_states.shape}")
         if self.post_process:
             # [s b h] => [b s h]
             if self.single_token_output:
                 hidden_states = hidden_states[0]
                 ## TODO: Let's use global mean pooling instead due to token length not matching up.
             else:
-                hidden_states = hidden_states.transpose(0, 1).contiguous()
+                if "GLOBAL_MEAN_POOLING" in os.environ:
+                    print(f"hidden_states: {hidden_states.shape}")
+                    hidden_states = torch.mean(hidden_states, dim=0)
+                else:
+                    ## we are using global mean pool otherwise for now. 
+                    ## if not single token, then output the entire embedding. 
+                    hidden_states = hidden_states.transpose(0, 1).contiguous()
 
         # args = get_args()
         # if args.use_unifiedSP:
         #     hidden_states
 
         ## Before head layer, parallelize across hidden dimension.
-        if self.ds_sequence_parallel:
-            ## round to the src rank
-            ## TODO: replace this with get data parallel source rank? 
-            world_rank = mpu.get_sequence_data_parallel_rank()
-            remainder = world_rank % seq_parallel_world_size
-            seq_src_rank = world_rank - remainder 
-            with torch.no_grad():
-                torch.distributed.broadcast(hidden_states, src=seq_src_rank, group=mpu.get_sequence_parallel_group()) ## TODO: Remove this if you are using global mean pool instead of clf token. I think
+        # if self.ds_sequence_parallel:
+        #     ## round to the src rank
+        #     ## TODO: replace this with get data parallel source rank? 
+        #     world_rank = mpu.get_sequence_data_parallel_rank()
+        #     remainder = world_rank % seq_parallel_world_size
+        #     seq_src_rank = world_rank - remainder 
+        #     with torch.no_grad():
+        #         torch.distributed.broadcast(hidden_states, src=seq_src_rank, group=mpu.get_sequence_parallel_group()) ## TODO: Remove this if you are using global mean pool instead of clf token. I think
     
         ## this cuts of other SP rank's graident except for the main one??, which is inoptimal but will do for now. 
         # print(f"hidden_states.shape: {hidden_states.shape}")
@@ -391,9 +406,7 @@ class VitBackbone(MegatronModule):
         #     hidden_states = hidden_states[:, sub_hid_start:sub_hid_end] ## b, h/SP
 
 
-        import os
-        debug_fname = os.environ["DEBUG_FNAME"]
-        if debug_fname != "None":
+        if debug_mode:
             with open(debug_fname, "a") as f:
                 f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head: {hidden_states}\n")
                 f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head shape: {hidden_states.shape}\n")

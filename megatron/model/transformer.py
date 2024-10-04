@@ -21,6 +21,7 @@ from megatron.model.rotary_pos_embedding import apply_rotary_pos_emb
 from megatron.model.utils import attention_mask_func, openai_gelu, erf_gelu
 import megatron.core.parallel_state as mpu
 import deepspeed
+import os
 from deepspeed.moe.layer import MoE
 from deepspeed.accelerator import get_accelerator
 
@@ -357,9 +358,10 @@ class CoreAttention(MegatronModule):
         context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
 
         # [sq, b, np, hn] --> [sq, b, hp]
-        new_context_layer_shape = context_layer.size()[:-2] + \
-            (self.hidden_size_per_partition,)
-        context_layer = context_layer.view(*new_context_layer_shape)
+        if not "NEWDS" in os.environ: ## When you do communication, you need separate head count and head size
+            new_context_layer_shape = context_layer.size()[:-2] + \
+                (self.hidden_size_per_partition,)
+            context_layer = context_layer.view(*new_context_layer_shape)
         # print(f"correct_output_shape: {correct_output_shape}")
         # context_layer = context_layer.view(correct_output_shape) ##TODO: correct fix to avoid "fusing dimensions?"
 
@@ -616,7 +618,7 @@ class ParallelAttention(MegatronModule):
 
         # Currently FlashAttention only works with causal mask
         self.causal = args.vision_backbone_type == "None" ## TODO: Double check that this is none when using LLMs
-        print(f"using causal: {self.causal}")
+        print(f"causal is set to: {self.causal}")
         if self.use_flash_attn_triton:
             local_attn = FlashSelfAttentionTriton(causal=self.causal, attention_dropout=args.attention_dropout)
         elif self.use_flash_attn:
@@ -880,14 +882,13 @@ class ParallelAttention(MegatronModule):
             #     return_attn_probs=False,
             # )
 
-            print(f"query_layer.shape: {query_layer.shape}")
+            # print(f"query_layer.shape: {query_layer.shape}")
             context_layer = self.dist_attn(
                 query_layer,
                 key_layer,
                 value_layer,
-                dropout_p=0.0,
                 causal=False,
-                # dropout_p=args.attention_dropout,
+                dropout_p=args.attention_dropout,
                 # causal=self.causal,
                 window_size=(-1, -1),
                 alibi_slopes=None,
@@ -907,8 +908,8 @@ class ParallelAttention(MegatronModule):
                 if not self.use_flash_attn_triton:
                     context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
             else:
-                context_layer = self.dist_attn(query_layer, key_layer, value_layer, attention_mask=attention_mask)
-                # context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx=batch_dim_idx, attention_mask=attention_mask)
+                # context_layer = self.dist_attn(query_layer, key_layer, value_layer, attention_mask=attention_mask)
+                context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx=batch_dim_idx, attention_mask=attention_mask)
         else:
             if self.use_flash_attn:
                 if not self.use_flash_attn_triton:
@@ -934,10 +935,12 @@ class ParallelAttention(MegatronModule):
         # =================
         # Output. [sq, b, h]
         # =================
+        
         if args.use_unifiedSP:
         # if args.use_unifiedSP and self.enable_ds_sequence_parallel:
-            # context_layer = context_layer.flatten(start_dim=-2)
             context_layer = rearrange(context_layer, ("s b hc hd -> b s (hc hd)")).contiguous()
+        elif not self.use_flash_attn and 'NEWDS' in os.environ: ## for deepspeed>=14.5
+            context_layer = context_layer.flatten(start_dim=-2) ## [s, b, hc, hd] -> [s, b, h]
 
         output, bias = self.dense(context_layer)
 
@@ -1341,11 +1344,11 @@ class ParallelTransformerLayer(MegatronModule):
         # hidden_states: [s, b, h]
 
         # Layer norm at the beginning of the transformer layer.
-        # layernorm_output = self.input_layernorm(hidden_states)
-        layernorm_output = hidden_states
+        layernorm_output = self.input_layernorm(hidden_states)
+        # layernorm_output = hidden_states
 
         import os
-        debug_fname = os.environ['DEBUG_FNAME']
+        debug_mode = 'DEBUG_FNAME' in os.environ
         seq_rank = mpu.get_sequence_parallel_rank()
 
         # Self attention.
@@ -1359,7 +1362,8 @@ class ParallelTransformerLayer(MegatronModule):
         # attention_output = layernorm_output
         # attention_bias = None
         
-        if debug_fname != "None":
+        if debug_mode:
+            debug_fname = os.environ['DEBUG_FNAME']
             with open(debug_fname, "a") as f:
                 f.write(f"\n\n\n\n")
                 f.write(f"[{seq_rank}, l={self.layer_number}] Layernorm output: {layernorm_output}\n")
@@ -1403,8 +1407,8 @@ class ParallelTransformerLayer(MegatronModule):
             layernorm_input = residual + self.drop_path(out)
 
         # Layer norm post the self attention.
-        # layernorm_output = self.post_attention_layernorm(layernorm_input)
-        layernorm_output = layernorm_input
+        layernorm_output = self.post_attention_layernorm(layernorm_input)
+        # layernorm_output = layernorm_input
 
         # Cross attention.
         if self.layer_type == LayerType.encoder:
@@ -1488,7 +1492,7 @@ class ParallelTransformerLayer(MegatronModule):
                                               training=self.training)
             output = residual + self.drop_path(out)
 
-        if debug_fname != "None":
+        if debug_mode:
             with open(debug_fname, "a") as f:
                 f.write(f"\n\n\n\n")
                 f.write(f"[{seq_rank}] post_attention_layernorm_output: {layernorm_output}") # post_attention_layernorm(layernorm_input)
@@ -2162,13 +2166,13 @@ class ParallelTransformer(MegatronModule):
                     self.microbatch_count += 1
 
         # Final layer norm.
-        # if self.post_process and self.post_layer_norm:
-        #     # TODO: Below old DeepSpeed code are commented because it's unsure whether
-        #     # it is still relevant.
-        #     # if not self.ds_inference:
-        #     #     # Reverting data format change [s b h] --> [b s h].
-        #     #     hidden_states = hidden_states.transpose(0, 1).contiguous()
-        #     hidden_states = self.final_layernorm(hidden_states)
+        if self.post_process and self.post_layer_norm:
+            # TODO: Below old DeepSpeed code are commented because it's unsure whether
+            # it is still relevant.
+            # if not self.ds_inference:
+            #     # Reverting data format change [s b h] --> [b s h].
+            #     hidden_states = hidden_states.transpose(0, 1).contiguous()
+            hidden_states = self.final_layernorm(hidden_states)
         
         # from megatron import print_rank_0
         # print_rank_0(f"final hidden state before head: {hidden_states.shape}")

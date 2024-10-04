@@ -107,30 +107,41 @@ def loss_func(labels, output_tensor):
     # if mpu.get_sequence_parallel_rank() == 0:
     # print(f"labels.shape: {labels.shape}")
     # print(f"output_tensor.shape: {output_tensor.shape}")
-    logits = output_tensor.contiguous().float()
-    outputs = torch.argmax(logits, -1)
-    correct = (outputs == labels).float()
-    accuracy = torch.mean(correct)
     # if seq_rank > 1:
     #     dist.broadcast(logits, src=0, group=mpu.get_sequence_parallel_group())
     # from megatron.core.sequence_parallel import vocab_sequence_parallel_cross_entropy
     # from megatron.core.tensor_parallel import vocab_parallel_cross_entropy
+    logits = output_tensor.contiguous().float()
+    if seq_rank == 0:
+        logits = output_tensor.contiguous().float()
+    else:
+        logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
+    outputs = torch.argmax(logits, -1)
+    correct = (outputs == labels).float()
+    accuracy = torch.mean(correct)
     if seq_world_size > 1:
+        # if seq_rank == 0:
         # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
-        loss = F.cross_entropy(logits, labels) / seq_world_size ## Currently backwards are called by 4 GPUS (same loss)?
+        loss = F.cross_entropy(logits, labels) #/ seq_world_size ## Currently backwards are called by 4 GPUS (same loss)?
+        # else:
+        #     loss = torch.tensor(0, device=torch.cuda.current_device())
+        #     accuracy = torch.tensor(0, device=torch.cuda.current_device())
     else:
         loss = F.cross_entropy(logits, labels)
+    
+    # requires_grad=False
 
     import os
-    debug_fname = os.environ["DEBUG_FNAME"]
-    if debug_fname != "None":
+    debug_mode = 'DEBUG_FNAME' in os.environ
+    if debug_mode:
+        debug_fname = os.environ["DEBUG_FNAME"]
         if seq_rank==0:
             torch.save(output_tensor, f"{debug_fname}.pt")
 
         with open(debug_fname, "a") as f:
-            f.write(f"[{seq_rank}] output after head: {output_tensor}\n")
-            f.write(f"[{seq_rank}] output after head shape: {output_tensor.shape}\n")
-            f.write(f"[{seq_rank}] loss: {loss}\n")
+            f.write(f"\n[{seq_rank}] output after head: {output_tensor}\n")
+            # f.write(f"\n[{seq_rank}] output after head shape: {output_tensor.shape}\n")
+            f.write(f"\n[{seq_rank}] loss: {loss}\n")
 
     # if seq_rank==0:
     #     logits = logits.T
@@ -210,6 +221,7 @@ def loss_func(labels, output_tensor):
     averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
     # averaged_loss = loss, accuracy
 
+    # return loss, {"loss": averaged_loss[0] * seq_world_size, "accuracy": averaged_loss[1] * seq_world_size}
     return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
 
 

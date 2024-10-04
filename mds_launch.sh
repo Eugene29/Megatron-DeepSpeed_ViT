@@ -3,7 +3,8 @@
 ## ENVIRONMENT
 echo "Launching Environment."
 # module load conda && conda activate base
-. ~/venv/stable/bin/activate ##USER: change env accordingly
+. ~/venv/stable_ds15.1/bin/activate
+# . ~/venv/stable/bin/activate ##USER: change env accordingly
 ## deepspeed version missing error workaround
 # cd $HOME/DeepSpeed;
 # python -c "import deepspeed; deepspeed.__version__"
@@ -15,6 +16,7 @@ export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
 
 ## PYTHONPATH
 SCRIPT_DIR=$(dirname $0)
+cd $SCRIPT_DIR
 PYTHONPATH=$og_PYTHONPATH
 
 # TEMP_DS=$HOME/DeepSpeed ##TODO: Remove later.
@@ -44,8 +46,6 @@ echo "PYTHON PATH: $PYTHONPATH"
      # --lr-warmup-iters ${LR_WARMUP_ITERS} \
      # --use-flash-attn-v1 \
 CLASSIFIER_ARGS="
-     --use-flash-attn-v2 \
-     --use_unifiedSP \
      $no_pipeline_parallel \
      --pipeline-model-parallel-size ${PP} \
      --ds-sequence-parallel-size ${SP} \
@@ -80,6 +80,14 @@ CLASSIFIER_ARGS="
      --retro-encoder-attention-dropout 0.0 \
      --retro-encoder-hidden-dropout 0.0 \
 "
+if [ -n "$unifiedSP" ]; then
+     CLASSIFIER_ARGS="--use_unifiedSP $CLASSIFIER_ARGS"
+fi
+
+if [ -n "$FA" ]; then
+     CLASSIFIER_ARGS="--use-flash-attn-v2 $CLASSIFIER_ARGS"
+fi
+
 
 DATA_ARGS="
      --tokenizer-type NullTokenizer \
@@ -87,9 +95,10 @@ DATA_ARGS="
      --data-path ${DATA_PATH} \
      --no-data-sharding \
      --split 949,50,1 \
+     --eval-iters 0  
 "
+     ##TODO: What really happens if you don't set eval-iter? How to evaluate on entire validation set?
 
-     # --eval-iters 19 \  ##TODO: What really happens if you don't set eval-iter? How to evaluate on entire validation set?
 OUTPUT_ARGS="
      --log-interval 25 \
      --eval-interval $EVAL_INTERVAL \
@@ -112,8 +121,17 @@ DS_ARGS="
 echo "Launching mpiexec."
 # run_cmd="python \
 
+# log_dir="/eagle/datascience/eku/Megatron-DeepSpeed_ViT/logs"
+# mkdir -p $log_dir
+# TZ=$"America/Chicago" 
+# time=$(date +"%m%d_%H%M")
+# nsys="nsys profile -o $log_dir/$time --stats=true --show-output=true"
+nsys=""
+
+
 run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
-     --cpu-bind depth -d 16 python \
+     --cpu-bind depth -d 16 \
+     $nsys python \
      ${SCRIPT_DIR}/pretrain_vision_classify.py \
      ${CLASSIFIER_ARGS} \
      ${DATA_ARGS} \

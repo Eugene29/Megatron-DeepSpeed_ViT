@@ -97,6 +97,13 @@ def average_losses_across_data_parallel_group(losses):
     """Reduce a tensor of losses across all GPUs."""
     averaged_losses = torch.cat(
         [loss.clone().detach().view(1) for loss in losses])
+    
+    ## Disregard other losses except for src ranks for SP.
+    from megatron.core.parallel_state import get_sequence_parallel_src_rank as get_src_rank, get_sequence_parallel_group as get_seq_group
+    seq_src_rank = get_src_rank()
+    seq_group = get_seq_group()
+    torch.distributed.broadcast(averaged_losses, src=seq_src_rank, group=seq_group)
+
     torch.distributed.all_reduce(averaged_losses,
                                  group=mpu.get_data_parallel_group())
     averaged_losses = averaged_losses / \

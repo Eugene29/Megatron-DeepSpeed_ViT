@@ -665,7 +665,8 @@ def setup_model_and_optimizer(model_provider_func,
 
     return model, optimizer, opt_param_scheduler
 
-
+count = 0
+threshold = 5
 
 def train_step(forward_step_func, data_iterator,
                model, optimizer, opt_param_scheduler, config):
@@ -711,11 +712,18 @@ def train_step(forward_step_func, data_iterator,
 
     
     import os
-    debug_fname = os.environ['DEBUG_FNAME']
+    debug_mode = 'DEBUG_FNAME' in os.environ
     import megatron.core.parallel_state as mpu
     seq_rank = mpu.get_sequence_parallel_rank()
+    
+    # global count
+    # global threshold
 
-    if debug_fname == "None":
+    # if debug_fname == "None":
+    # count+=1
+    # print(f"count: {count}")
+    # if debug_mode and count < threshold:
+    if not debug_mode:
         losses_reduced = forward_backward_func(
             forward_step_func=forward_step_func,
             data_iterator=data_iterator,
@@ -725,12 +733,12 @@ def train_step(forward_step_func, data_iterator,
             micro_batch_size=args.micro_batch_size,
             decoder_seq_length=args.decoder_seq_length,
             forward_only=False)
-        
     else:
-        model[0].eval()
+        # model[0].eval()
         torch.manual_seed(33333)
-        size = 16
-        input_tensor = (torch.randn(size, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device()), torch.tensor([1] * size))
+        bs = 16
+        w_and_h = int(os.environ["IMG_W"])
+        input_tensor = (torch.randn(bs, 3, w_and_h, w_and_h, dtype=torch.half, device=torch.cuda.current_device()), torch.tensor([1] * bs))
         losses_reduced = forward_backward_func(
             forward_step_func=forward_step_func,
             data_iterator=[iter([input_tensor])],
@@ -740,29 +748,32 @@ def train_step(forward_step_func, data_iterator,
             micro_batch_size=args.micro_batch_size,
             decoder_seq_length=args.decoder_seq_length,
             forward_only=False)
-    
-    # input_tensor = torch.randn(32, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device())
-    # output = model[0](input_tensor)
-    #     with open(debug_fname, "a") as f:
-    #         f.write(f"[{seq_rank}] output: {output}\n")
 
-    # if seq_rank==0:
-    ## TODO: maybe the other ranks have different gradients when you used vocab_parallel?
+        # input_tensor = torch.randn(32, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device())
+        # output = model[0](input_tensor)
+        #     with open(debug_fname, "a") as f:
+        #         f.write(f"[{seq_rank}] output: {output}\n")
+
+        ## TODO: maybe the other ranks have different gradients when you used vocab_parallel?
+        outputs, gradients, before_weights, after_weights = [], [], [], []
+        debug_fname = os.environ['DEBUG_FNAME']
         with open(debug_fname, "a") as f:
             # f.write(f"output: {output}\n")
             f.write(f"\n\n\n\n[{seq_rank}] input tensor: {input_tensor}")
             # f.write(f"\n\n\n\n[{seq_rank}] losses_reduced (from training.py): {losses_reduced}")
             f.write(f"\n\n\n\n-------------------------------------------\n[{seq_rank}] Gradients:")
 
+            # if seq_rank == 0:
             for name, param in model[0].named_parameters():
                 grad = deepspeed.utils.safe_get_full_grad(param)
-                f.write(f"name: {name}, param: {grad}")
+                f.write(f"\nname: {name}, param: {grad}")
+                gradients.append(grad)
+                before_weights.append(param)
 
-    # with open("debug/weights_SP.txt", "w") as f:
-    # # with open("debug/weights_DP.txt", "w") as f:
-    #     for name, param in model[0].named_parameters():
-    #         f.write(f"name: {name}, param: {param}")
-        raise KeyboardInterrupt("break")
+        # with open("debug/weights_SP.txt", "w") as f:
+        # # with open("debug/weights_DP.txt", "w") as f:
+        #     for name, param in model[0].named_parameters():
+        #         f.write(f"name: {name}, param: {param}")
 
 
     # reset timers if necessary
@@ -797,6 +808,22 @@ def train_step(forward_step_func, data_iterator,
     else:
         update_successful, grad_norm, num_zeros_in_grad = optimizer.step(args, timers)
     timers('optimizer').stop()
+
+    ## print gradient(make sure they are emptied and updated)
+    ## check the updated weights (should be identical to DP)
+    # if debug_fname != "None" and count == threshold:
+    if debug_mode:
+        with open(debug_fname, "a") as f:
+            f.write(f"\n\n\n\n-------------------------------------------\n[{seq_rank}] Gradients after step:")
+            for name, param in model[0].named_parameters():
+                grad = deepspeed.utils.safe_get_full_grad(param)
+                f.write(f"\nname: {name}, gradients (after step): {grad}, weights (after step): {param}")
+                after_weights.append(param)
+            max_memory = torch.cuda.max_memory_allocated()
+            f.write(f"\nmax_memory: {max_memory / (1024 ** 3)}")
+        
+        # torch.save([gradients, before_weights, after_weights], debug_fname + '.pt')
+        raise KeyboardInterrupt("Ran one batch of toy-dataset")
 
     # Gather params.
     if not args.deepspeed and update_successful:
@@ -1296,14 +1323,31 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         assert model[0].random_ltd_enabled()
         args.random_ltd_layer_num = model[0].random_ltd_scheduler.get_random_ltd_layer_num()
         
-    # with torch.profiler.profile(
-    #     schedule=torch.profiler.schedule(wait=5, warmup=2, active=6, repeat=2),
-    #     # activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-    #     on_trace_ready=torch.profiler.tensorboard_trace_handler("/home/eku/aevard/polaris-trial/jobscripts/log/"),
-    #     record_shapes=True,
-    #     with_stack=True
-    # ) as profiler:
-    
+    def trace_handler(p):
+        # output = p.key_averages().table(sort_by="self_cuda_time_total", row_limit=10)
+        log_dir = "./trace_vit/"
+        os.makedirs(log_dir, exist_ok=True)
+        rank = torch.cuda.current_device()
+        Ulysses = "unifiedSP" if "unifiedSP" in os.environ else "DS"
+        FA = 'FA_' if 'FA' in os.environ else ""
+        SP = os.environ["SP"] + "_"
+        p.export_chrome_trace(log_dir + f"{Ulysses}_{FA}{SP}rank{rank}.json")
+
+    import os
+    profile_enabled = "PROFILE" in os.environ
+    if profile_enabled:
+        print_rank_0(f"PROFILING...")
+        p = torch.profiler.profile(
+            schedule=torch.profiler.schedule(wait=5, warmup=2, active=2),
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            # on_trace_ready=torch.profiler.tensorboard_trace_handler("/home/eku/aevard/polaris-trial/jobscripts/log/"),
+            record_shapes=True,
+            with_stack=True,
+            on_trace_ready=trace_handler,
+        )
+        p.start()
+        args.train_iters = 10
+
     while iteration < args.train_iters and (args.train_tokens is None or \
         args.consumed_train_tokens < args.train_tokens):
         trigger(on_step_begin)
@@ -1439,7 +1483,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                         f"iteration={iteration}. Exiting")
             sys.exit()
 
-            # profiler.step()
+        if profile_enabled:
+            p.step()
+    if profile_enabled:
+        p.stop()
 
     return iteration
 

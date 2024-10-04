@@ -218,8 +218,6 @@ class DatasetFolder(VisionDataset):
         curr_index = index
         for x in range(self.total):
             try:
-                path, target = self.samples[curr_index]
-                sample = self.loader(path)
 
                 # from megatron import get_args
                 # args = get_args()
@@ -230,12 +228,16 @@ class DatasetFolder(VisionDataset):
                 #     file.write(rank_str + path + '\n')
 
                 #### Using Toy Dataset ####
-                # import torch
-                # assert "IMG_W" in os.environ
-                # w = int(os.environ["IMG_W"])
-                # h = int(os.environ["IMG_H"])
-                # sample = torch.randn(3, w, h, dtype=torch.float16) ## Doesn't let 92 channels
-                # target = torch.randint(10, ())
+                if os.environ["DATA"] != "Toy":
+                    path, target = self.samples[curr_index]
+                    sample = self.loader(path)
+                else:
+                    import torch
+                    assert "IMG_W" in os.environ
+                    w = int(os.environ["IMG_W"])
+                    h = int(os.environ["IMG_H"])
+                    sample = torch.randn(3, w, h, dtype=torch.float16) ## Doesn't let 92 channels
+                    target = torch.randint(10, ())
                 break
             except Exception as e:
                 curr_index = np.random.randint(0, self.total)

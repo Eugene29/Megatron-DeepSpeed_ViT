@@ -230,9 +230,11 @@ def build_train_valid_datasets(data_path, image_size=224):
 
     # training dataset
     train_data_path = data_path[0] if len(data_path) <= 2 else data_path[2]
+    if os.environ["DATA"] == "Toy":
+        train_transform, val_transform = None, None
+
     train_data = ImageFolder(
         root=train_data_path,
-        # transform=None, ##TODO: enable for toy datasets
         transform=train_transform,
         classes_fraction=args.classes_fraction,
         data_per_class_fraction=args.data_per_class_fraction
@@ -243,7 +245,6 @@ def build_train_valid_datasets(data_path, image_size=224):
     val_data_path = data_path[1]
     val_data = ImageFolder(
         root=val_data_path,
-        # transform=None, ##TODO: enable for toy datasets
         transform=val_transform
     )
     val_data = RandomSeedDataset(val_data)

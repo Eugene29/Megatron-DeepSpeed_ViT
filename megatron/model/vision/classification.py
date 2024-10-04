@@ -10,6 +10,7 @@ from megatron.model.utils import get_linear_layer
 from megatron.model.vision.vit_backbone import VitBackbone, VitMlpHead
 from megatron.model.vision.mit_backbone import mit_b3_avg
 from megatron.model.module import MegatronModule
+import os
 
 class VitClassificationModel(MegatronModule):
     """Vision Transformer Model."""
@@ -28,6 +29,7 @@ class VitClassificationModel(MegatronModule):
             config=config,
             pre_process=self.pre_process,
             post_process=self.post_process,
+            class_token=("GLOBAL_MEAN_POOLING" not in os.environ),
             single_token_output=True
         )
         
@@ -51,8 +53,13 @@ class VitClassificationModel(MegatronModule):
 
         ## Only rank==0 has hidden_states
         # if self.post_process and hidden_states is not None:
+        # from megatron.core.parallel_state import get_sequence_parallel_rank as get_seq_rank
+        # seq_rank = get_seq_rank()
+        # if self.post_process and seq_rank == 0:
         if self.post_process:
             hidden_states = self.head(hidden_states)
+        # else:
+        #     hidden_states = 0
 
         # import os
         # debug_fname = os.environ['DEBUG_FNAME']

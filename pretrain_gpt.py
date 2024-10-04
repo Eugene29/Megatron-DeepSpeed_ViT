@@ -126,6 +126,7 @@ def get_batch(data_iterator):
     seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
 
     # For Megatron's sequence parallel
+    ## This "scatter" might be needed to parallelize layers before the first attn layer. 
     if args.sequence_parallel:
         seq_parallel_world_size = mpu.get_tensor_model_parallel_world_size()
         seq_parallel_world_rank = mpu.get_tensor_model_parallel_rank()

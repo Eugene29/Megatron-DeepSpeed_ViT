@@ -1,0 +1,35 @@
+{
+  "train_micro_batch_size_per_gpu": 512,
+  "steps_per_print": 9999999999,
+  "gradient_accumulation_steps": 1,
+  "zero_allow_untested_optimizer": true,
+  "gradient_clipping": 1.0,
+  "activation_checkpointing": {
+    "partition_activations": true,
+    "contiguous_memory_optimization": true
+  },
+  "communication_data_type": "fp16",
+  "fp16": {
+            "enabled": true,
+            "loss_scale": 0
+          },
+  "wall_clock_breakdown": false,
+  "logging_level": "WARNING",
+  "comms_logger": {
+                    "enabled": true,
+                    "verbose": false,
+                    "prof_all": true,
+                    "debug": false
+                  },
+  "flops_profiler": {
+                      "enabled": false,
+                      "profile_step": 2,
+                      "module_depth": -1,
+                      "top_modules": 1,
+                      "detailed": true,
+                      "output_file": null
+                    },
+  "data_sampling": {
+    "num_epochs": 100
+  }
+}

@@ -738,7 +738,7 @@ def train_step(forward_step_func, data_iterator,
         torch.manual_seed(33333)
         bs = 16
         w_and_h = int(os.environ["IMG_W"])
-        input_tensor = (torch.randn(bs, 3, w_and_h, w_and_h, dtype=torch.half, device=torch.cuda.current_device()), torch.tensor([1] * bs))
+        input_tensor = (torch.randn(bs, 3, w_and_h, w_and_h, dtype=torch.half, device=torch.xpu.current_device()), torch.tensor([1] * bs))
         losses_reduced = forward_backward_func(
             forward_step_func=forward_step_func,
             data_iterator=[iter([input_tensor])],
@@ -1086,7 +1086,8 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             writer.add_scalar('seqlen/random_ltd_reserved_length vs tokens', args.random_ltd_reserved_length,
                               args.consumed_train_tokens, x_axis_tokens)
         if args.log_memory_to_tensorboard:
-            mem_stats = torch.cuda.memory_stats()
+            mem_stats = torch.xpu.memory_stats()
+            # mem_stats = torch.cuda.memory_stats()
             writer.add_scalar(
                 "mem-reserved-bytes",
                 mem_stats["reserved_bytes.all.current"],
@@ -1327,11 +1328,12 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         # output = p.key_averages().table(sort_by="self_cuda_time_total", row_limit=10)
         log_dir = "./trace_vit/"
         os.makedirs(log_dir, exist_ok=True)
-        rank = torch.cuda.current_device()
-        Ulysses = "unifiedSP" if "unifiedSP" in os.environ else "DS"
-        FA = 'FA_' if 'FA' in os.environ else ""
-        SP = os.environ["SP"] + "_"
-        p.export_chrome_trace(log_dir + f"{Ulysses}_{FA}{SP}rank{rank}.json")
+        rank = torch.xpu.current_device()
+        if rank == 0:
+            Ulysses = "unifiedSP" if "unifiedSP" in os.environ else "DS"
+            FA = 'FA_' if 'FA' in os.environ else ""
+            SP = "SP" + os.environ["SP"] + "_"
+            p.export_chrome_trace(log_dir + f"Aurora_{Ulysses}_{FA}{SP}rank{rank}.json")
 
     import os
     profile_enabled = "PROFILE" in os.environ
@@ -1339,7 +1341,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         print_rank_0(f"PROFILING...")
         p = torch.profiler.profile(
             schedule=torch.profiler.schedule(wait=5, warmup=2, active=2),
-            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            activities=[ProfilerActivity.CPU, ProfilerActivity.XPU],
             # on_trace_ready=torch.profiler.tensorboard_trace_handler("/home/eku/aevard/polaris-trial/jobscripts/log/"),
             record_shapes=True,
             with_stack=True,
@@ -1348,8 +1350,40 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         p.start()
         args.train_iters = 10
 
+    def num_floating_point_operations(args, batch_size):
+        # Group Query Attention.
+        # if not args.group_query_attention:
+        if not args.num_key_value_heads:
+            args.num_key_value_heads = args.num_attention_heads
+            # args.num_query_groups = args.num_attention_heads
+        # MoE.
+        # num_experts_routed_to = 1 if args.num_experts is None else args.moe_router_topk
+        num_experts_routed_to = 1 if args.num_experts is None else args.topk
+        gated_linear_multiplier = 3 / 2 if args.swiglu else 1
+        return (
+            12
+            * batch_size
+            * args.seq_length
+            * args.num_layers
+            * args.hidden_size
+            * args.hidden_size
+            * (
+                1
+                + (
+                    (args.ffn_hidden_size / args.hidden_size)
+                    * num_experts_routed_to
+                    * gated_linear_multiplier
+                )
+                + (args.num_key_value_heads / args.num_attention_heads)
+                + (args.seq_length / args.hidden_size)
+                + (args.padded_vocab_size / (2 * args.num_layers * args.hidden_size))
+            )
+        )
+    args = get_args()
+    from time import time
     while iteration < args.train_iters and (args.train_tokens is None or \
         args.consumed_train_tokens < args.train_tokens):
+        strt = time()
         trigger(on_step_begin)
         update_num_microbatches(args.consumed_train_samples)
         if args.deepspeed:
@@ -1358,6 +1392,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                 args.micro_batch_size * \
                                 get_num_microbatches()
             model[0].set_train_batch_size(global_batch_size)
+        tot_Tflops = num_floating_point_operations(args=args, batch_size=global_batch_size) / 1000 ** 4
 
         if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
             curriculum_seqlen = args.curriculum_scheduler.update_difficulty( \
@@ -1485,6 +1520,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         if profile_enabled:
             p.step()
+        step_time = time() - strt
+        max_memory_used = torch.xpu.max_memory_allocated() / (1024**3)
+        print_rank_0(f"iteration: {iteration} time: {step_time} TFLOPS: {tot_Tflops / step_time} Max_memory: {max_memory_used}")
+
     if profile_enabled:
         p.stop()
 

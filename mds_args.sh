@@ -4,7 +4,9 @@
 ## COMMUNICATION
 TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
 NHOSTS=$(wc -l < "${PBS_NODEFILE}")
-NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
+NGPU_PER_HOST=4 ## TODO: MAKE THIS AGNOSTIC
+# NGPU_PER_HOST=12
+# NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 
 
 if [ -n "$SIZE" ] && [ $SIZE -eq 1 ]; then
@@ -59,7 +61,7 @@ export DATA=${DATA:-'CIFAR'}
 # export DATA=${DATA:-'CIFAR'}
 
 AEVARD_PATH=/eagle/datascience/vsastry/from_andre/aevard/datasets
-EKU_PATH=/eagle/datascience/eku/data/
+EKU_PATH=/home/eku/data/
 if [[ $DATA == 'IMNET' ]]; then
     # DATA_PATH="~/aevard/datasets/imnet-20/train ~/aevard/datasets/imnet-20/valid"
     DATA_PATH="$AEVARD_PATH/imnet-20/train $AEVARD_PATH/imnet-20/valid"
@@ -91,7 +93,6 @@ elif [[ $DATA == 'CIFAR' ]]; then
     LR=1e-4
     WEIGHT_DECAY=0
     PATCH_DIM=4
-    size_factor=1
     IMG_W=32
     IMG_H=32
 
@@ -106,19 +107,19 @@ elif [[ $DATA == 'CIFAR' ]]; then
     DS_CONFIG_FNAME="CIFAR.json"
 
     ## ViT-Tiny
-    NLAYERS=6
-    HSIZE=512
-    FFN_HSIZE=512
-    NUM_HEADS=8
+    # NLAYERS=6
+    # HSIZE=512
+    # FFN_HSIZE=512
+    # NUM_HEADS=8
     # ATT_DROPOUT=0.1
     # H_DROPOUT=0.1
 
     # ## Test VIT Large (mine)
     # if [ -n "$PROFILE" ]; then
-    #     NLAYERS=12
-    #     HSIZE=4096
-    #     FFN_HSIZE=4096
-    #     NUM_HEADS=64
+    NLAYERS=12
+    HSIZE=4096
+    FFN_HSIZE=4096
+    NUM_HEADS=64
     # fi
 
     # ATT_DROPOUT=0.1
@@ -131,8 +132,8 @@ elif [[ $DATA == 'Toy' ]]; then
     DATA_PATH="$EKU_PATH/CIFAR10/train $EKU_PATH/CIFAR10/valid"
     NUM_CLASSES=20
     PATCH_DIM=16
-    factor=2
-    # factor=51
+    # factor=2
+    factor=${factor:-54}
     # factor=215
     IMG_W=$(($PATCH_DIM * $factor))
     IMG_H=$(($PATCH_DIM * $factor))
@@ -193,3 +194,24 @@ export NUM_HEADS="${NUM_HEADS}"
 RUN_NAME="N${NUM_NODES}-${TSTAMP}"
 RUN_NAME="VIT-CLASS-${RUN_NAME}"
 export RUN_NAME="${RUN_NAME}"
+
+## Curious to know more about these:
+export CUDNN_PATH=/soft/libraries/cudnn/cudnn-cuda12-linux-x64-v9.1.0.70/
+export CPATH=$CUDNN_PATH/include:$CPATH
+export CC=gcc-12
+export CXX=g++-12
+export NCCL_CROSS_NIC=1 
+export NCCL_COLLNET_ENABLE=1 
+export NCCL_NET="AWS Libfabric"
+export LD_LIBRARY_PATH=/soft/libraries/aws-ofi-nccl/v1.9.1-aws/lib:$LD_LIBRARY_PATH 
+export LD_LIBRARY_PATH=/soft/libraries/hwloc/lib/:$LD_LIBRARY_PATH 
+export FI_CXI_DISABLE_HOST_REGISTER=1 
+export FI_MR_CACHE_MONITOR=userfaultfd 
+export FI_CXI_DEFAULT_CQ_SIZE=131072
+# set master address to the first host
+master_node=$(head -1 $PBS_NODEFILE)
+export MASTER_ADDR=$(host $master_node | head -1 | awk '{print $4}')
+export MASTER_PORT=29500
+export NNODES=$NNODES
+export CUDA_LAUNCH_BLOCKING=1
+export CUDA_DEVICE_MAX_CONNECTIONS=1

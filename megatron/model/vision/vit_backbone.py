@@ -5,7 +5,7 @@
 import math
 import einops
 import torch
-import apex
+# import apex
 import torch.distributed
 import torch.nn.functional as F
 from megatron import get_args
@@ -16,6 +16,7 @@ from megatron.model.utils import (
     init_method_normal,
     scaled_init_method_normal,
 )
+from deepspeed.accelerator import get_accelerator
 from megatron.model.module import MegatronModule
 from megatron import get_args, print_rank_0
 
@@ -192,13 +193,15 @@ class VitBackbone(MegatronModule):
                     torch.randn(1, CLASS_TOKEN_LENGTH, self.hidden_size)
                 )
                 torch.nn.init.zeros_(self.cls_token)
-            self.position_ids = torch.arange(self.seq_length).expand(1, -1).cuda()
+            dev = get_accelerator()
+            ## TODO: make device= dev instantiation
+            # self.position_ids = torch.arange(self.seq_length, device=dev).expand(1, -1)
+            self.position_ids = torch.arange(self.seq_length).expand(1, -1).xpu()
             
             # Linear encoder
             self.linear_encoder = torch.nn.Linear(
                 self.flatten_dim, self.hidden_size
             )
-
             # embedding
             self.position_embeddings = torch.nn.Embedding(
                 self.seq_length, self.hidden_size

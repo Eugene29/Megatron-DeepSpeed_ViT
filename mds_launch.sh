@@ -3,7 +3,7 @@
 ## ENVIRONMENT
 echo "Launching Environment."
 # module load conda && conda activate base
-. ~/venv/stable_ds15.1/bin/activate
+# . ~/venv/stable_ds15.1/bin/activate
 # . ~/venv/stable/bin/activate ##USER: change env accordingly
 ## deepspeed version missing error workaround
 # cd $HOME/DeepSpeed;
@@ -11,8 +11,8 @@ echo "Launching Environment."
 # cd ..
 
 ## DATA_FILEPATHS CONSUMED
-export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
-> $DATA_PATH_LOG ## clear file
+# export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
+# > $DATA_PATH_LOG ## clear file
 
 ## PYTHONPATH
 SCRIPT_DIR=$(dirname $0)
@@ -102,7 +102,7 @@ DATA_ARGS="
 OUTPUT_ARGS="
      --log-interval 25 \
      --eval-interval $EVAL_INTERVAL \
-     --wandb-project PolarisViT \
+     --wandb-project AuroraViT \
      --save-interval 2500 \
 "
 

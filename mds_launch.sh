@@ -15,7 +15,7 @@ export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
 > $DATA_PATH_LOG ## clear file
 
 ## PYTHONPATH
-SCRIPT_DIR=$(dirname $0)
+SCRIPT_DIR=$(dirname $0 | xargs realpath)
 cd $SCRIPT_DIR
 PYTHONPATH=$og_PYTHONPATH
 
@@ -31,10 +31,7 @@ export MASTER_PORT=6000
 ## ARGUMENTS
 source "${SCRIPT_DIR}/mds_args.sh"
 ds_json=${SCRIPT_DIR}/${DS_CONFIG_FNAME}
-export MICRO_BATCH=$(jq -r '.train_micro_batch_size_per_gpu' $ds_json) ## I think DS config overwrites anyway.
-# MICRO_BATCH=$(($MICRO_BATCH * $SP * $TP)) ##NOTE: Implemented to match the global batch size with DP
-## ?? but you need it
-export CUDA_DEVICE_MAX_CONNECTIONS=1 
+# export MICRO_BATCH=$(jq -r '.train_micro_batch_size_per_gpu' $ds_json) ## I think DS config overwrites anyway.
 
 echo "Script Directory: ${SCRIPT_DIR}"
 echo "PYTHON PATH: $PYTHONPATH"
@@ -71,7 +68,7 @@ CLASSIFIER_ARGS="
      --num-workers ${NGPUS} \
      --no-masked-softmax-fusion \
      --no-bias-dropout-fusion \
-     --micro-batch-size ${MICRO_BATCH} \
+     --micro-batch-size ${MBS} \
      --attention-dropout ${ATT_DROPOUT:-0} \
      --hidden-dropout ${H_DROPOUT:-0} \
      --ffn-hidden-size ${FFN_HSIZE:-HSIZE} \
@@ -80,6 +77,7 @@ CLASSIFIER_ARGS="
      --retro-encoder-attention-dropout 0.0 \
      --retro-encoder-hidden-dropout 0.0 \
 "
+
 if [ -n "$unifiedSP" ]; then
      CLASSIFIER_ARGS="--use_unifiedSP $CLASSIFIER_ARGS"
 fi

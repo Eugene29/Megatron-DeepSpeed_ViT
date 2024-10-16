@@ -113,16 +113,48 @@ elif [[ $DATA == 'CIFAR' ]]; then
     # ATT_DROPOUT=0.1
     # H_DROPOUT=0.1
 
-    # ## Test VIT Large (mine)
+    # ## Test VIT Large (my version)
     # if [ -n "$PROFILE" ]; then
-    #     NLAYERS=12
-    #     HSIZE=4096
-    #     FFN_HSIZE=4096
-    #     NUM_HEADS=64
+    # NLAYERS=12
+    # HSIZE=2048
+    # FFN_HSIZE=2048
+    # NUM_HEADS=16
     # fi
 
     # ATT_DROPOUT=0.1
     # H_DROPOUT=0.1
+    MBS=$(($MBS * $SP))
+    cat <<EOF > $DS_CONFIG_FNAME
+{
+    "train_micro_batch_size_per_gpu": $MBS,
+    "steps_per_print": 9999999999,
+    "gradient_accumulation_steps": 1,
+    "zero_allow_untested_optimizer": false,
+    "gradient_clipping": 1.0,
+    "communication_data_type": "fp16",
+    "fp16": {
+                "enabled": true,
+                "loss_scale": 0
+            },
+    "wall_clock_breakdown": false,
+    "logging_level": "WARNING",
+    "comms_logger": {
+                        "enabled": false,
+                        "verbose": false,
+                        "prof_all": true,
+                        "debug": false
+                    },
+    "flops_profiler": {
+                        "enabled": false,
+                        "profile_step": 10,
+                        "module_depth": -1,
+                        "top_modules": 1,
+                        "detailed": false,
+                        "output_file": null
+                        }
+}
+EOF
+    ## EOF is super weird but correct. 
     echo "TRAINING ON CIFAR"
 
 elif [[ $DATA == 'Toy' ]]; then
@@ -131,22 +163,34 @@ elif [[ $DATA == 'Toy' ]]; then
     DATA_PATH="$EKU_PATH/CIFAR10/train $EKU_PATH/CIFAR10/valid"
     NUM_CLASSES=20
     PATCH_DIM=16
-    factor=2
-    # factor=51
+    # factor=2
+    # factor=94
     # factor=215
+    factor=${factor:-54}
+
     IMG_W=$(($PATCH_DIM * $factor))
     IMG_H=$(($PATCH_DIM * $factor))
+    # IMG_W=$($IMG_SIZE:-$IMG_W)
+    # IMG_H=$($IMG_SIZE:-$IMG_H)
 
     ## DATA
     DS_CONFIG_FNAME="Toy.json"
 
     ## ViT-Tiny
-    NLAYERS=16
-    HSIZE=2048
-    FFN_HSIZE=2048
-    NUM_HEADS=32
+    NLAYERS=6
+    HSIZE=512
+    FFN_HSIZE=512
+    NUM_HEADS=8
     ATT_DROPOUT=0.1
     H_DROPOUT=0.1
+
+    ## VIT-LARGE (my def)
+    # NLAYERS=16
+    # HSIZE=2048
+    # FFN_HSIZE=2048
+    # NUM_HEADS=32
+    # ATT_DROPOUT=0.1
+    # H_DROPOUT=0.1
     echo "TRAINING ON TOYDATASET"
 fi
 
@@ -166,8 +210,6 @@ export DATA_PATH="${DATA_PATH}"
 ## ARCHITECTURE
 ##TODO: VIT+SP+FA has randomness issue that worsens with respect to the sequence length. 
 
-MIN_LR=0.00001
-
 ## ViT-Base - 84M
 # NLAYERS=8
 # HSIZE=1024
@@ -182,10 +224,14 @@ export IMG_H="${IMG_H}"
 export IMG_W="${IMG_W}"
 export PATCH_DIM="${PATCH_DIM}"
 export LR="${LR:-1e-4}"
-export MIN_LR="${MIN_LR}"
+export MIN_LR="${MIN_LR:-0.00001}"
 export NLAYERS="${NLAYERS}"
 export HSIZE="${HSIZE}"
-export SEQ_LEN=$(echo "${IMG_W} * ${IMG_W} / ${PATCH_DIM}^2 + 1" | bc)  
+SEQ_LEN=$(echo "${IMG_W} * ${IMG_W} / ${PATCH_DIM}^2" | bc)  
+if [ -z GLOBAL_MEAN_POOLING ]; then
+    SEQ_LEN=$((SEQ_LEN + 1))
+fi
+export SEQ_LEN
 echo "Sequence length: ${SEQ_LEN}"
 export NUM_HEADS="${NUM_HEADS}"
 

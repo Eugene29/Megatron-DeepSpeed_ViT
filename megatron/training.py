@@ -1192,6 +1192,8 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             elapsed_time,
             total_iterations
         )
+        print(f"MDS' tflops: {tflops}")        
+
         samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
         tokens_per_sec = samples_per_sec * seq_len
         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
@@ -1329,9 +1331,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         os.makedirs(log_dir, exist_ok=True)
         rank = torch.cuda.current_device()
         Ulysses = "unifiedSP" if "unifiedSP" in os.environ else "DS"
+        WS = torch.distributed.get_world_size()
         FA = 'FA_' if 'FA' in os.environ else ""
-        SP = os.environ["SP"] + "_"
-        p.export_chrome_trace(log_dir + f"{Ulysses}_{FA}{SP}rank{rank}.json")
+        SP = "SP" + os.environ["SP"] + "_"
+        if torch.distributed.get_rank() == 0:
+            p.export_chrome_trace(log_dir + f"WS{WS}_{Ulysses}_{FA}{SP}rank{rank}.json")
 
     import os
     profile_enabled = "PROFILE" in os.environ
@@ -1348,8 +1352,43 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         p.start()
         args.train_iters = 10
 
+    def num_floating_point_operations(args, batch_size):
+        # Group Query Attention.
+        # if not args.group_query_attention:
+        if not args.num_key_value_heads:
+            args.num_key_value_heads = args.num_attention_heads
+            # args.num_query_groups = args.num_attention_heads
+        # MoE.
+        # num_experts_routed_to = 1 if args.num_experts is None else args.moe_router_topk
+        num_experts_routed_to = 1 if args.num_experts is None else args.topk
+        gated_linear_multiplier = 3 / 2 if args.swiglu else 1
+        return (
+            12
+            * batch_size
+            * args.seq_length
+            * args.num_layers
+            * args.hidden_size
+            * args.hidden_size
+            * (
+                1
+                + (
+                    (args.ffn_hidden_size / args.hidden_size)
+                    * num_experts_routed_to
+                    * gated_linear_multiplier
+                )
+                + (args.num_key_value_heads / args.num_attention_heads)
+                + (args.seq_length / args.hidden_size)
+                + (args.padded_vocab_size / (2 * args.num_layers * args.hidden_size))
+            )
+        )
+    args = get_args()
+    from time import time
+    # from deepspeed.profiling.flops_profiler import FlopsProfiler
+    # prof = FlopsProfiler(model[0])
+    # prof.start_profile()
     while iteration < args.train_iters and (args.train_tokens is None or \
         args.consumed_train_tokens < args.train_tokens):
+        strt = time()
         trigger(on_step_begin)
         update_num_microbatches(args.consumed_train_samples)
         if args.deepspeed:
@@ -1358,7 +1397,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                 args.micro_batch_size * \
                                 get_num_microbatches()
             model[0].set_train_batch_size(global_batch_size)
+            tot_Tflops = num_floating_point_operations(args=args, batch_size=global_batch_size) / 1000 ** 4
+            # print(f"Megatron-LM formula? tot_Tflops: {tot_Tflops}")
 
+        ## Check all code updates and clean then up. 
         if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
             curriculum_seqlen = args.curriculum_scheduler.update_difficulty( \
                     args.iteration + 1)
@@ -1374,6 +1416,13 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     optimizer,
                     opt_param_scheduler,
                     config)
+        
+        step_time1 = time() - strt
+        # model_agnostic_DS_flop_count = prof.get_total_flops()
+        # if torch.distributed.get_rank() == 0:
+        #     print(f"DS tflop count: {model_agnostic_DS_flop_count // 10**12}")
+        # prof.reset_profile()
+
         iteration += 1
         args.iteration = iteration
         new_samples = mpu.get_data_parallel_world_size() * \
@@ -1485,6 +1534,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         if profile_enabled:
             p.step()
+
+        step_time2 = time() - strt
+        max_memory_used = torch.cuda.max_memory_allocated() / (1024**3)
+        print_rank_0(f"iteration: {iteration} time: {step_time1, step_time2} TFLOPS: {tot_Tflops / step_time2} Max_memory: {max_memory_used}")
+
     if profile_enabled:
         p.stop()
 

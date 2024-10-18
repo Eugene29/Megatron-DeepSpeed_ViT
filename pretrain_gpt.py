@@ -1,7 +1,7 @@
 # Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain GPT"""
-
+# from mpi4py import MPI
 import torch
 import math
 from functools import partial
@@ -26,7 +26,12 @@ import subprocess
 
 from torch import nn
 import torch.nn.functional as F
+import torch.distributed as dist
 
+# import ezpz as ez
+# ez.setup_torch(backend="deepspeed") ## Properly sets up RANK, LOCAL_RANK, NUM_NODES, LOCAL_SIZE, WORLD_SIZE
+# LOCAL_RANK = ez.get_local_rank()
+# torch.cuda.set_device(LOCAL_RANK)
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
@@ -104,6 +109,18 @@ def get_batch(data_iterator):
         data = next(data_iterator)
     else:
         data = None
+    if "DATA_PATH_LOG" in os.environ: ## tokens_consumed.log
+        rank = torch.distributed.get_rank()
+        import megatron.core.parallel_state as mpu
+        dp = mpu.get_data_parallel_world_size()
+        with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
+            dp_rank = mpu.get_data_parallel_rank()
+            dp_src_rank = mpu.get_data_parallel_src_rank()
+            for i in range(dp):
+                ## print data sequentially for easier comparison
+                if dp_src_rank == 0 and i == dp_rank:
+                    file.write(f"(rank{rank}) tokens: {data['text']}\n") ## write file
+                torch.distributed.barrier()
     data_b = tensor_parallel.broadcast_data(keys, data, datatype)
 
     # Unpack.

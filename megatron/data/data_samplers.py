@@ -10,6 +10,7 @@ from torch.utils.data import Dataset
 from megatron import get_args
 from megatron.core import mpu
 from deepspeed.runtime.dataloader import RepeatingLoader
+import os
 
 
 def build_pretraining_data_loader(dataset, consumed_samples):
@@ -150,9 +151,9 @@ class MegatronPretrainingRandomSampler:
         return self.total_samples
 
     def __iter__(self):
-        active_total_samples = self.total_samples - self.last_batch_size
+        active_total_samples = self.total_samples - self.last_batch_size ## discard last batch_size?
         self.epoch = self.consumed_samples // active_total_samples
-        current_epoch_samples = self.consumed_samples % active_total_samples
+        current_epoch_samples = self.consumed_samples % active_total_samples ## samples consumed in current epoch
         assert current_epoch_samples % self.micro_batch_times_data_parallel_size == 0
 
         if isinstance(self.dataset, RandomSeedDataset):
@@ -170,8 +171,12 @@ class MegatronPretrainingRandomSampler:
             random_idx = torch.randperm(bucket_size, generator=g).tolist()
             idx_range = [start_idx + x for x in random_idx[bucket_offset:]]
         else:
-            full_bucket_size = (self.total_samples // self.micro_batch_size) \
-                                * self.micro_batch_size
+            if 'drop_last_batch_with_GBS' in os.environ:
+                full_bucket_size = (self.total_samples // self.micro_batch_times_data_parallel_size) \
+                                    * self.micro_batch_times_data_parallel_size
+            else:
+                full_bucket_size = (self.total_samples // self.micro_batch_size) \
+                                    * self.micro_batch_size
             full_bucket_offset = current_epoch_samples
             g = torch.Generator()
             g.manual_seed(self.epoch)

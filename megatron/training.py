@@ -59,6 +59,7 @@ from deepspeed.runtime.data_pipeline.data_routing.helper import convert_to_rando
 from megatron.model.transformer import ParallelTransformerLayer
 
 from deepspeed import comm as dist
+import os
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
@@ -1245,6 +1246,22 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     if args.random_ltd:
         assert model[0].random_ltd_enabled()
         args.random_ltd_layer_num = model[0].random_ltd_scheduler.get_random_ltd_layer_num()
+    def num_floating_point_operations(args, batch_size):
+        B = batch_size ## Global Batch Size
+        s = args.seq_length ## sequence length
+        h = args.hidden_size ## emb hidden dimension
+        h_ = args.ffn_hidden_size ## ffnn hidden dimension
+        l = args.num_layers ## num att. layer
+        p = args.patch_dim ## patch size
+        c = args.num_channels ## num channels
+
+        Att_computation = 4 * B * s**2 * h ## QK^T, (NxN) @ V
+        Lin_Transform = 8 * B * s * h**2 ## Q, K, V, O
+        MLP = 4 * B * s * h * h_ ## 2 Lin Transform
+        Lin_Embedding = 2 * B * s * p**2 * c * h ## (B s p^2*c) @ (p^2*c h)
+        ## Since num_classes << s * h, we can ignore num_classes.
+
+        return 3 * (l * (Att_computation +  Lin_Transform + MLP) + Lin_Embedding) ## x3 for fwd + bwd(2x)
         
     while iteration < args.train_iters and (args.train_tokens is None or \
         args.consumed_train_tokens < args.train_tokens):
@@ -1256,6 +1273,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                 args.micro_batch_size * \
                                 get_num_microbatches()
             model[0].set_train_batch_size(global_batch_size)
+            tot_Tflops = num_floating_point_operations(args, global_batch_size) / 1000**4
+            strt = time.time()
 
         if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
             curriculum_seqlen = args.curriculum_scheduler.update_difficulty( \
@@ -1265,6 +1284,13 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     update_rotary_pos_emb(curriculum_seqlen)
             args.curriculum_seqlen = curriculum_seqlen
         args.curr_iteration = iteration
+        if "DATA_PATH_LOG" in os.environ:
+            args = get_args()
+            if args.rank == 0:
+                with open(os.environ["DATA_PATH_LOG"], "a") as file:
+                    file.write("\n" + "#"*30 + f" iter {iteration} " + f"#"*30 + "\n")
+                    file.flush()
+            # torch.distributed.barrier() ## For cleaner prints without race conditions. 
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
             train_step(forward_step_func,
                        train_data_iterator,
@@ -1381,6 +1407,13 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                            f"iteration={iteration}. Exiting")
             sys.exit()
 
+        memory_tensor = torch.cuda.max_memory_allocated() / (1024**3)
+        step_time = time.time() - strt
+        samples_per_sec = global_batch_size / step_time
+        print_rank_0(f"iteration:{iteration} \t"
+                f"TFLOPS:{tot_Tflops / step_time:.2f} \t"
+                f"Samples/Sec:{samples_per_sec:.2f} \t"
+                f"Max_memory:{memory_tensor:.2f}" )
     return iteration
 
 

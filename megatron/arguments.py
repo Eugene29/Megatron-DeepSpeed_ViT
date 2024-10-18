@@ -101,6 +101,9 @@ def validate_args(args, defaults={}):
     model_parallel_size = args.pipeline_model_parallel_size * \
                           args.tensor_model_parallel_size * \
                           args.ds_sequence_parallel_size
+    # print(f"args.world_size: {args.world_size}")
+    # print(f"model_parallel_size: {model_parallel_size}")
+    # return KeyboardInterrupt()
     assert args.world_size % model_parallel_size == 0, 'world size ({}) is not'\
         ' divisible by tensor parallel size ({}) times pipeline parallel ' \
         'size ({}) times seqence parallel size ({})'.format(args.world_size, args.tensor_model_parallel_size,

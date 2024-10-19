@@ -1,9 +1,18 @@
 #!/bin/bash
-dir=`pwd`
+dir=$(dirname $0 | xargs realpath)
+cd $dir
+# module load conda
+# conda activate base
+. ~/venv/stable_ds15.1/bin/activate
+
+if [ -n "$DATA_PATH_LOG" ]; then
+    > $DATA_PATH_LOG
+fi
 ###############################################################################
 ### Main configs
 ## GPT-3 models use 2K sequence length/context window
-seq_len=32768
+# seq_len=32768
+export seq_len=8192
 export DATA=./ALCF/data-lists/polaris/books.txt
 ## The "GPT-3 XXX" below are configs from GPT-3 paper
 ## https://arxiv.org/abs/2005.14165, choose based on
@@ -31,14 +40,14 @@ export DATA=./ALCF/data-lists/polaris/books.txt
 # init_std=0.02
 
 ## GPT-3 Medium 350M
-# model_size=0.35
-# num_layers=24
-# hidden_size=1024
-# num_attn_heads=16
-# global_batch_size=256
-# lr=3.0e-4
-# min_lr=1.0e-6
-# init_std=0.018
+model_size=0.35
+num_layers=24
+hidden_size=1024
+num_attn_heads=16
+export global_batch_size=4
+lr=3.0e-4
+min_lr=1.0e-6
+init_std=0.018
 
 ## GPT-3 Large 760M
 # model_size=0.76
@@ -51,14 +60,14 @@ export DATA=./ALCF/data-lists/polaris/books.txt
 # init_std=0.015
 
 ## GPT-3 XL 1.3B
-model_size=1.3
-num_layers=24
-hidden_size=2048
-num_attn_heads=16
-global_batch_size=4
-lr=2.0e-4
-min_lr=1.0e-6
-init_std=0.013
+# model_size=1.3
+# num_layers=24
+# hidden_size=2048
+# num_attn_heads=16
+# global_batch_size=4
+# lr=2.0e-4
+# min_lr=1.0e-6
+# init_std=0.013
 
 ## GPT-3 2.7B
 # model_size=2.7
@@ -104,6 +113,8 @@ init_std=0.013
 ## The main termination condition, original GPT-3 paper trains for 300B tokens.
 train_tokens_in_billion=300
 train_tokens=$((${train_tokens_in_billion} * 1000000000))
+train_iter=200
+train_tokens=$(($seq_len * $global_batch_size * $train_iter))
 
 ## train_samples is another termination condition and also affect the number of 
 ## data samples to be indexed. Since we want to reach the train_tokens
@@ -139,7 +150,7 @@ lr_decay_style="cosine"
 mp_size=1
 
 ## Sequence parallelism, 1 is no SP
-sp_size=1
+sp_size=${sp_size:-1}
 
 ## Pipeline parallelism. To disable PP, set pp_size to 1 and no_pp to true.
 ## Note that currently both curriculum learning and random-LTD are NOT
@@ -148,21 +159,29 @@ pp_size=1
 no_pp="true"
 
 ## ZeRO-based data parallelism, stage=0 will disable ZeRO
-zero_stage=1
+zero_stage=0
 
 ## Total number of GPUs. ds_ssh is from DeepSpeed library.
-num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
+num_gpus=$(nvidia-smi -L | wc -l)
+# num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
 num_gpus_pernode=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 num_node=$(( ${num_gpus} / ${num_gpus_pernode} ))
 
+if [ ${SIZE:-""} -eq 1 ]; then
+    export CUDA_VISIBLE_DEVICES=0
+    num_gpus=1
+    num_gpus_pernode=1
+    num_node=1
+fi
+
 ## Data parallel size.
 dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} / ${sp_size} ))
+# train_samples=$(($seq_len * 25 * $dp_size)) ## commented og train_samples
 
 ## Micro batch size per GPU
 ## Make sure that batch_size <= global_batch_size*pp_size*mp_size/num_gpus
 ## Reduce it manually if GPU OOM
-# batch_size=$(( ${global_batch_size} / ${dp_size} ))
-batch_size=1
+batch_size=$((${global_batch_size} / ${dp_size}))
 
 ###############################################################################
 ### Misc configs
@@ -291,7 +310,6 @@ megatron_options=" \
     --load ${checkpoint_path} \
     --save ${checkpoint_path} \
     --no-async-tensor-model-parallel-allreduce \
-    --use-flash-attn-triton \
     --tensorboard-queue-size 1 \
     --log-timers-to-tensorboard \
     --log-batch-size-to-tensorboard \
@@ -301,9 +319,11 @@ megatron_options=" \
     --no-bias-dropout-fusion \
     --accumulate-allreduce-grads-in-fp32 \
     --log-validation-ppl-to-tensorboard \
-    --tensorboard-dir ${tensorboard_path}"
+    --tensorboard-dir ${tensorboard_path} \
+    --use-flash-attn-v2"
 
-export DEBUG_FNAME="None"
+    # --use-flash-attn-triton \
+# export DEBUG_FNAME="None"
 
 if [ "${activation_checkpoint}" = "true" ]; then
 megatron_options="${megatron_options} \
@@ -312,7 +332,8 @@ fi
 
 if [ "${log_optimizer_state}" = "true" ]; then
 megatron_options="${megatron_options} \
-    --log-optimizer-states-to-tensorboard"
+    --log-optimizer-states-to-tensorboard
+    --wandb-project PolarisLLM-Test"
 fi
 
 config_json="ds_config_gbs${global_batch_size}_mbs${batch_size}_log${log_interval}_zero${zero_stage}.json"

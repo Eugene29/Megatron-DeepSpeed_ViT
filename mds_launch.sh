@@ -11,8 +11,11 @@ echo "Launching Environment."
 # cd ..
 
 ## DATA_FILEPATHS CONSUMED
-export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
-> $DATA_PATH_LOG ## clear file
+if [ -n "$DATA_PATH_LOG" ]; then
+     export DATA_PATH_LOG=DATA_PATH_LOG
+     > $DATA_PATH_LOG ## clear file
+     echo "it was notempty"
+fi
 
 ## PYTHONPATH
 SCRIPT_DIR=$(dirname $0 | xargs realpath)
@@ -22,6 +25,8 @@ PYTHONPATH=$og_PYTHONPATH
 # TEMP_DS=$HOME/DeepSpeed ##TODO: Remove later.
 # TEMP_DS=/soft/applications/conda/2024-04-29/mconda3/lib/python3.11/site-packages/
 # PYTHONPATH="$TEMP_DS:${PYTHONPATH}" ##TODO: Remove later.
+YUNCHANG=/home/eku/long-context-attention
+PYTHONPATH="$YUNCHANG:$PYTHONPATH" ## Adding MEGATRON to pypath ## This should be done automatically? 
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Adding MEGATRON to pypath ## This should be done automatically? 
 
 ## HOST NODE
@@ -86,6 +91,9 @@ if [ -n "$FA" ]; then
      CLASSIFIER_ARGS="--use-flash-attn-v2 $CLASSIFIER_ARGS"
 fi
 
+if [ -n "$NUM_CHANNELS" ]; then
+     CLASSIFIER_ARGS="--num-channels $NUM_CHANNELS"
+fi
 
 DATA_ARGS="
      --tokenizer-type NullTokenizer \
@@ -98,7 +106,7 @@ DATA_ARGS="
      ##TODO: What really happens if you don't set eval-iter? How to evaluate on entire validation set?
 
 OUTPUT_ARGS="
-     --log-interval 25 \
+     --log-interval 5 \
      --eval-interval $EVAL_INTERVAL \
      --wandb-project PolarisViT \
      --save-interval 2500 \

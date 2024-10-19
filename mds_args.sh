@@ -7,11 +7,17 @@ NHOSTS=$(wc -l < "${PBS_NODEFILE}")
 NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 
 
-if [ -n "$SIZE" ] && [ $SIZE -eq 1 ]; then
+CUDA_VISIBLE_DEVICES=0,1,2,3
+if [ ${SIZE:-"-1"} -eq 1 ]; then
     ## CUDA DEVICE (for experiments)
     CUDA_VISIBLE_DEVICES=0
     NGPU_PER_HOST=1
     NGPUS=1
+elif [ ${SIZE:-"-1"} -eq 2 ]; then
+    ## CUDA DEVICE (for experiments)
+    CUDA_VISIBLE_DEVICES=0,1
+    NGPU_PER_HOST=2
+    NGPUS=2
 fi
 
 # export WANDB_MODE="disabled"
@@ -51,12 +57,22 @@ export TSTAMP="${TSTAMP}"
 export NHOSTS="${NHOSTS}"
 export NGPU_PER_HOST="${NGPU_PER_HOST}"
 export PROJECT="datascience"
-NGPUS=$((${NHOSTS}*${NGPU_PER_HOST}))
-export NGPUS="${NGPUS}"
+export NGPUS=$(($NHOSTS * $NGPU_PER_HOST))
 
 ## DATA
 export DATA=${DATA:-'CIFAR'}
 # export DATA=${DATA:-'CIFAR'}
+
+## SET PARALLELISM DEGREES
+MP=$(($SP * $TP * $PP))
+DP=$(($NGPUS / $MP))
+if [ -n "$GBS" ]; then
+    MBS=$(($GBS / $DP))
+elif [ -n "$MBS" ]; then
+    MBS=$(($MBS * $MP))
+else
+    printf "\nERROR: you need to pass in MBS or GBS\n"; exit 1
+fi
 
 AEVARD_PATH=/eagle/datascience/vsastry/from_andre/aevard/datasets
 EKU_PATH=/eagle/datascience/eku/data/
@@ -123,8 +139,77 @@ elif [[ $DATA == 'CIFAR' ]]; then
 
     # ATT_DROPOUT=0.1
     # H_DROPOUT=0.1
-    MBS=$(($MBS * $SP))
-    cat <<EOF > $DS_CONFIG_FNAME
+    ## EOF is super weird but correct. 
+    echo "TRAINING ON CIFAR"
+
+elif [[ $DATA == 'Toy' ]]; then
+    ##Toy Dataset
+    # DATA_PATH="~/aevard/datasets/CIFAR10/train ~/aevard/datasets/CIFAR10/valid"
+    DATA_PATH="$EKU_PATH/CIFAR10/train $EKU_PATH/CIFAR10/valid"
+    NUM_CLASSES=20
+    PATCH_DIM=16
+    # factor=2
+    # factor=94
+    # factor=215
+    factor=${factor:-54}
+
+    IMG_W=$(($PATCH_DIM * $factor))
+    IMG_H=$(($PATCH_DIM * $factor))
+    # IMG_W=$($IMG_SIZE:-$IMG_W)
+    # IMG_H=$($IMG_SIZE:-$IMG_H)
+
+    # TRAIN_SAMPLES=$(($NUM_EPOCHS * 10))
+    # LR_WARMUP_SAMPLES=1
+    TRAIN_SAMPLES=$DP
+    LR_WARMUP_SAMPLES=0
+
+    ## DATA
+    DS_CONFIG_FNAME="Toy.json"
+
+    ## ViT-Tiny (1M)
+    # NLAYERS=6
+    # HSIZE=512
+    # FFN_HSIZE=512
+    # NUM_HEADS=8
+
+    ## VIT-Large (307M)
+    # NLAYERS=24
+    # HSIZE=1024
+    # FFN_HSIZE=4096
+    # NUM_HEADS=16
+    # NLAYERS=30
+    # HSIZE=2048
+    # FFN_HSIZE=8192
+
+    ## VIT-2B (1.6B in VIT? Why doesn't it fit?)
+    # NLAYERS=10
+    NLAYERS=5
+    HSIZE=4096
+    FFN_HSIZE=11008
+    # HSIZE=16384
+    # FFN_HSIZE=16384
+    NUM_HEADS=32
+
+    # ATT_DROPOUT=0.1
+    # H_DROPOUT=0.1
+    echo "TRAINING ON TOYDATASET"
+fi
+
+# echo CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES
+# echo NGPU_PER_HOST: $NGPU_PER_HOST
+# echo NGPUS: $NGPUS
+# echo ""
+# echo GBS: $GBS
+# echo MBS: $MBS
+# echo DP: $DP
+# echo MP: $MP
+# exit 1
+if [ -n "$TRAIN_ITERS" ]; then
+    TRAIN_SAMPLES=$(($DP * $TRAIN_ITERS))
+fi
+
+
+cat <<EOF > $DS_CONFIG_FNAME
 {
     "train_micro_batch_size_per_gpu": $MBS,
     "steps_per_print": 9999999999,
@@ -154,45 +239,10 @@ elif [[ $DATA == 'CIFAR' ]]; then
                         }
 }
 EOF
-    ## EOF is super weird but correct. 
-    echo "TRAINING ON CIFAR"
-
-elif [[ $DATA == 'Toy' ]]; then
-    ##Toy Dataset
-    # DATA_PATH="~/aevard/datasets/CIFAR10/train ~/aevard/datasets/CIFAR10/valid"
-    DATA_PATH="$EKU_PATH/CIFAR10/train $EKU_PATH/CIFAR10/valid"
-    NUM_CLASSES=20
-    PATCH_DIM=16
-    # factor=2
-    # factor=94
-    # factor=215
-    factor=${factor:-54}
-
-    IMG_W=$(($PATCH_DIM * $factor))
-    IMG_H=$(($PATCH_DIM * $factor))
-    # IMG_W=$($IMG_SIZE:-$IMG_W)
-    # IMG_H=$($IMG_SIZE:-$IMG_H)
-
-    ## DATA
-    DS_CONFIG_FNAME="Toy.json"
-
-    ## ViT-Tiny
-    NLAYERS=6
-    HSIZE=512
-    FFN_HSIZE=512
-    NUM_HEADS=8
-    ATT_DROPOUT=0.1
-    H_DROPOUT=0.1
-
-    ## VIT-LARGE (my def)
-    # NLAYERS=16
-    # HSIZE=2048
-    # FFN_HSIZE=2048
-    # NUM_HEADS=32
-    # ATT_DROPOUT=0.1
-    # H_DROPOUT=0.1
-    echo "TRAINING ON TOYDATASET"
-fi
+    # "activation_checkpointing": {
+    #     "partition_activations": true,
+    #     "contiguous_memory_optimization": true
+    # }
 
 ## OVERWRITE CONFIGS (DEBUG)
 # TRAIN_SAMPLES=500
@@ -205,6 +255,7 @@ export EVAL_ITERS="${EVAL_ITERS:-1000}"
 export LR_WARMUP_SAMPLES="${LR_WARMUP_SAMPLES:-250}"
 export EVAL_INTERVAL=${EVAL_INTERVAL:-250}
 export DATA_PATH="${DATA_PATH}"
+export DATA=$DATA
 
 
 ## ARCHITECTURE

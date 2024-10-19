@@ -358,12 +358,11 @@ class CoreAttention(MegatronModule):
         context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
 
         # [sq, b, np, hn] --> [sq, b, hp]
-        if not "NEWDS" in os.environ: ## When you do communication, you need separate head count and head size
+        ## [s, b, hc, hs] --> [s, b, h]?
+        if not "NEWDS" in os.environ: ## New DS-Ulysses need separate head count and head size dimensions.
             new_context_layer_shape = context_layer.size()[:-2] + \
                 (self.hidden_size_per_partition,)
             context_layer = context_layer.view(*new_context_layer_shape)
-        # print(f"correct_output_shape: {correct_output_shape}")
-        # context_layer = context_layer.view(correct_output_shape) ##TODO: correct fix to avoid "fusing dimensions?"
 
         return context_layer
 
@@ -405,22 +404,22 @@ class FlashSelfAttention(torch.nn.Module):
             self.use_flash_attn = True
 
     ## Add bathc_dim_idx as it is inputted later on. 
-    def forward(self, q, k, v):
-        from flash_attn import flash_attn_func
-        out_ref, _, _ = flash_attn_func(
-            q,
-            k,
-            v,
-            dropout_p=0.0,
-            causal=False,
-            window_size=(-1, -1),
-            alibi_slopes=None,
-            deterministic=True,
-            return_attn_probs=True,
-        )
-        return out_ref
+    # def forward(self, q, k, v):
+    #     from flash_attn import flash_attn_func
+    #     out_ref, _, _ = flash_attn_func(
+    #         q,
+    #         k,
+    #         v,
+    #         dropout_p=self.dropout_p,
+    #         causal=self.causal,
+    #         window_size=(-1, -1),
+    #         alibi_slopes=None,
+    #         deterministic=True,
+    #         return_attn_probs=True,
+    #     )
+    #     return out_ref
     
-    # def forward(self, q, k, v, batch_dim_idx):
+    def forward(self, q, k, v):
         """Implements the multihead softmax attention.
         Arguments
         ---------
@@ -432,10 +431,6 @@ class FlashSelfAttention(torch.nn.Module):
 
         batch_size, seqlen_q = q.shape[0], q.shape[1]
         seqlen_k = k.shape[1]
-
-        ## Transpose batch_dim depending on batch_dim_idx. We want batch_dim on dim=0 always. 
-        # if batch_dim_idx == 1:
-        #     q, k, v = q.transpose(0, 1).contiguous(), q.transpose(0, 1).contiguous(), q.transpose(0, 1).contiguous()
 
         if self.use_flash_attn:
             q, k, v = [rearrange(x, 'b s ... -> (b s) ...') for x in [q, k, v]]
@@ -630,35 +625,47 @@ class ParallelAttention(MegatronModule):
         self.enable_ds_sequence_parallel = parallel_state.get_sequence_parallel_world_size() > 1 \
                                            or args.force_ds_sequence_parallel
         
-        if args.use_unifiedSP:
-            from yunchang import (
-                AsyncLongContextAttention,
-                LongContextAttention,
-                UlyssesAttention,
-                set_seq_parallel_pg,
-            )
-            ## Ulysses only
-            sp_pg = mpu.get_sequence_parallel_group()
-            self.dist_attn = UlyssesAttention(sequence_process_group=sp_pg, use_fa=args.use_flash_attn)
+        if self.enable_ds_sequence_parallel:
+            ## Do we need custom asserts for USP or do they take care of invalid configurations? 
+            if args.USP_ulysses:
+                ## Ulysses only
+                sp_pg = mpu.get_sequence_parallel_group()
+                if "PACKED" in os.environ:
+                    from yunchang import PackedUlyssesAttention
+                    is_5D = os.environ["PACKED"] == "5D"
+                    self.dist_attn = PackedUlyssesAttention(local_attn=local_attn, is_5D=is_5D, sequence_process_group=sp_pg, use_fa=args.use_flash_attn)
+                else:
+                    from yunchang import UlyssesAttention
+                    self.dist_attn = UlyssesAttention(local_attn=local_attn, sequence_process_group=sp_pg, use_fa=args.use_flash_attn)
 
-            ## Unified SP
-            # use_ulysses_lowdim=False
-            # set_seq_parallel_pg(
-            #     args.ds_sequence_parallel_size, 1, args.rank, args.ds_sequence_parallel_size, use_ulysses_lowdim
-            # )
-            # self.dist_attn = LongContextAttention(ring_impl_type="basic")
+            elif args.USP_ring:
+                from yunchang import ring_flash_attn_func
+                ## Just a function 
+                self.dist_attn = ring_flash_attn_func
+            
+            elif args.USP_hybrid:
+                ## TODO: add how to pass ring and ulysses degree.
+                # from yunchang import AsyncLongContextAttention ## TODO: Async doesn't have backward implemented yet.
+                from yunchang import LongContextAttention, set_seq_parallel_pg
+                sp_pg = mpu.get_sequence_parallel_group()
+                sp_size = mpu.get_sequence_parallel_world_size()
+                rank = mpu.get_sequence_data_parallel_rank()
+                world_size = torch.cuda.device_count()
+                # Where is FA argument?
+                # What is use_ulysses_low? What will be the inner SP? 
+                set_seq_parallel_pg(sp_ulysses_degree=sp_size, sp_ring_degree=1, rank=rank, world_size=world_size, use_ulysses_low=False)
+                # self.dist_attn = AsyncLongContextAttention(ring_impl_type="basic")
+                self.dist_attn = LongContextAttention(ring_impl_type="basic")
+            
+            else:
+                assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
+                assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
+                self.dist_attn = DistributedAttention(
+                    local_attn, 
+                    parallel_state.get_sequence_parallel_group(), ## group that needs to communicate together. (if 1, then it communicates with other devices in 1)
+                    gather_idx=1 if args.use_flash_attn_v1 or args.use_flash_attn_v2 else 0) 
+                # flash_attn_cuda assumes [b, s, nh, hd] layout, we need to make sure all2all gathers into the correct sequence dimension.
 
-            # if args.use_async_all_to_all:
-            # longctx_attn = AsyncLongContextAttention(ring_impl_type=args.ring_impl_type)
-            # else:
-        elif self.enable_ds_sequence_parallel:
-            assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
-            assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
-            self.dist_attn = DistributedAttention(
-                local_attn, 
-                parallel_state.get_sequence_parallel_group(), ## group that needs to communicate together. (if 1, then it communicates with other devices in 1)
-                gather_idx=1 if args.use_flash_attn_v1 or args.use_flash_attn_v2 else 0) 
-            # flash_attn_cuda assumes [b, s, nh, hd] layout, we need to make sure all2all gathers into the correct sequence dimension.
         else:
             if self.use_flash_attn:
                 self.core_attention_flash = local_attn
@@ -870,46 +877,57 @@ class ParallelAttention(MegatronModule):
             # value_layer = apply_rotary_pos_emb(value_layer, k_pos_emb)
 
         args = get_args()
-        if args.use_unifiedSP:
-            query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous() for x in (query_layer, key_layer, value_layer)]
-            # context_layer = self.dist_attn(
-            #     query_layer,
-            #     key_layer,
-            #     value_layer,
-            #     dropout_p=args.attention_dropout,
-            #     causal=self.causal,
-            #     deterministic=True, ## TODO: True for Now?
-            #     return_attn_probs=False,
-            # )
+        if self.enable_ds_sequence_parallel:
+            if args.USP_ring:
+                from time import time
+                strt = time()
+                query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous() for x in (query_layer, key_layer, value_layer)]
+                context_layer = self.dist_attn(
+                    query_layer,
+                    key_layer,
+                    value_layer,
+                    dropout_p=args.attention_dropout,
+                    causal=self.causal,
+                    window_size=(-1, -1),
+                    alibi_slopes=None,
+                    deterministic=True,
+                    return_attn_probs=False,
+                    group=mpu.get_sequence_parallel_group(),
+                )
 
-            # print(f"query_layer.shape: {query_layer.shape}")
-            context_layer = self.dist_attn(
-                query_layer,
-                key_layer,
-                value_layer,
-                causal=False,
-                dropout_p=args.attention_dropout,
-                # causal=self.causal,
-                window_size=(-1, -1),
-                alibi_slopes=None,
-                deterministic=True,
-                return_attn_probs=False,
-            )
-        elif self.enable_ds_sequence_parallel:
-            batch_dim_idx = 1
-            if self.use_flash_attn:
-                if not self.use_flash_attn_triton:
-                    query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous()
-                            for x in (query_layer, key_layer, value_layer)]
-                    batch_dim_idx = 0
+            elif args.USP_ulysses or args.USP_hybrid:
+                query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous() for x in (query_layer, key_layer, value_layer)]
+                context_layer = self.dist_attn(
+                    query_layer,
+                    key_layer,
+                    value_layer,
+                    dropout_p=args.attention_dropout,
+                    causal=self.causal,
+                    window_size=(-1, -1),
+                    alibi_slopes=None,
+                    deterministic=True,
+                    return_attn_probs=False,
+                )
 
-                context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx)
+            elif not args.use_unifiedSP:
+                ## Deepspeed Ulysses (FA)
+                batch_dim_idx = 1
+                if self.use_flash_attn:
+                    if not self.use_flash_attn_triton:
+                        query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous()
+                                for x in (query_layer, key_layer, value_layer)]
+                        batch_dim_idx = 0
 
-                if not self.use_flash_attn_triton:
-                    context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
+                    context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx)
+
+                    if not self.use_flash_attn_triton:
+                        context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
+
             else:
+                ## Deepspeed Ulysses (CoreAttention)
                 # context_layer = self.dist_attn(query_layer, key_layer, value_layer, attention_mask=attention_mask)
                 context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx=batch_dim_idx, attention_mask=attention_mask)
+
         else:
             if self.use_flash_attn:
                 if not self.use_flash_attn_triton:
@@ -936,10 +954,9 @@ class ParallelAttention(MegatronModule):
         # Output. [sq, b, h]
         # =================
         
-        if args.use_unifiedSP:
-        # if args.use_unifiedSP and self.enable_ds_sequence_parallel:
-            context_layer = rearrange(context_layer, ("s b hc hd -> b s (hc hd)")).contiguous()
-        elif not self.use_flash_attn and 'NEWDS' in os.environ: ## for deepspeed>=14.5
+        if args.use_unifiedSP and self.enable_ds_sequence_parallel:
+            context_layer = rearrange(context_layer, ("b s hc hd -> s b (hc hd)")).contiguous() ## TODO: unnecessary transpose of s b -> b s then b s -> s b.
+        elif not self.use_flash_attn and 'NEWDS' in os.environ: ## if DS-Ulysses w/ deepspeed>=14.5
             context_layer = context_layer.flatten(start_dim=-2) ## [s, b, hc, hd] -> [s, b, h]
 
         output, bias = self.dense(context_layer)

@@ -200,17 +200,42 @@ class VitBackbone(MegatronModule):
             )
 
             # embedding
-            self.position_embeddings = torch.nn.Embedding(
-                self.seq_length, self.hidden_size
-            )
-            init_method_normal(args.init_method_std)(
-                self.position_embeddings.weight
-            )
+            self.pos_encoding = args.pos_encoding ## TODO: pass it as init argument or as config
+            if self.pos_encoding:
+                ## TODO: Understanding the theroy behind pos encoding and optimize it for longer sequences. 
+                def positionalencoding1d(d_model, length):
+                    """
+                    :param d_model: dimension of the model
+                    :param length: length of positions
+                    :return: length*d_model position matrix
+                    """
+                    if d_model % 2 != 0:
+                        raise ValueError("Cannot use sin/cos positional encoding with "
+                                        "odd dim (got dim={:d})".format(d_model))
+                    dtype = torch.float16
+                    pe = torch.zeros((length, d_model), dtype=dtype)
+                    position = torch.arange(0, length, dtype=dtype).unsqueeze(1)
+                    div_term = torch.exp((torch.arange(0, d_model, 2, dtype=dtype) *
+                                        -(math.log(10000.0) / d_model)))
+                    pe[:, 0::2] = torch.sin(position.float() * div_term)
+                    pe[:, 1::2] = torch.cos(position.float() * div_term)
+                    return pe
+                
+                self.position_embeddings = positionalencoding1d(self.hidden_size, self.seq_length).to(args.rank)
+            else:
+                self.position_embeddings = torch.nn.Embedding(
+                    self.seq_length, self.hidden_size
+                )
 
             args.class_token_present = self.class_token
-            self.position_embeddings._register_load_state_dict_pre_hook(
-                twod_interpolate_position_embeddings_hook
-            )
+            
+            if not self.pos_encoding:
+                init_method_normal(args.init_method_std)(
+                    self.position_embeddings.weight
+                )
+                self.position_embeddings._register_load_state_dict_pre_hook(
+                    twod_interpolate_position_embeddings_hook
+                )
 
             self.embedding_dropout = torch.nn.Dropout(args.hidden_dropout)
             # # Dropout.
@@ -254,8 +279,15 @@ class VitBackbone(MegatronModule):
                 cls_tokens = self.cls_token.expand(encoder_output.shape[0], -1, -1)
                 concatenated_tokens = torch.cat((cls_tokens, encoder_output), dim=1)
 
-            token_embeddings = concatenated_tokens + \
-                    self.position_embeddings(self.position_ids[:, :concatenated_tokens.shape[1]])
+            if self.pos_encoding:
+                # print(f"self.position_embeddings: {self.position_embeddings.shape}")
+                # print(f"concatenated_tokens: {concatenated_tokens.shape}")
+                token_embeddings = concatenated_tokens + self.position_embeddings
+
+            else:
+                token_embeddings = concatenated_tokens + \
+                        self.position_embeddings(self.position_ids[:, :concatenated_tokens.shape[1]])
+
             # [b, s, h] => [s, b, h]
             # token_embeddings = token_embeddings.transpose(0, 1).contiguous()
             hidden_states = token_embeddings.transpose(0, 1).contiguous()

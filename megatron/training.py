@@ -1330,12 +1330,29 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         log_dir = "./trace_vit/"
         os.makedirs(log_dir, exist_ok=True)
         rank = torch.cuda.current_device()
-        Ulysses = "unifiedSP" if "unifiedSP" in os.environ else "DS"
         WS = torch.distributed.get_world_size()
         FA = 'FA_' if 'FA' in os.environ else ""
         SP = "SP" + os.environ["SP"] + "_"
+        DATA = os.environ["DATA"]
+        if "USP_ulysses" in os.environ:
+            framework = "USP_ulysses"
+        elif "USP_ring" in os.environ:
+            framework = "USP_ring"
+        elif "USP_hybrid" in os.environ:
+            framework = "USP_hybrid"
+        else:
+            framework = "DS"
+        
+        if "PACKED" in os.environ:
+            if os.environ["PACKED"] == "5D":
+                packed = "packed5D_"
+            else:
+                packed = "packed_"
+        else:
+            packed = ""
+
         if torch.distributed.get_rank() == 0:
-            p.export_chrome_trace(log_dir + f"WS{WS}_{Ulysses}_{FA}{SP}rank{rank}.json")
+            p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
 
     import os
     profile_enabled = "PROFILE" in os.environ
@@ -1352,7 +1369,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         p.start()
         args.train_iters = 10
 
-    def num_floating_point_operations(args, batch_size):
+    def llm_num_floating_point_operations(args, batch_size):
         # Group Query Attention.
         # if not args.group_query_attention:
         if not args.num_key_value_heads:
@@ -1381,14 +1398,37 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 + (args.padded_vocab_size / (2 * args.num_layers * args.hidden_size))
             )
         )
+
+    def num_floating_point_operations(args, batch_size):
+        B = batch_size ## Global Batch Size
+        s = args.seq_length ## sequence length
+        h = args.hidden_size ## emb hidden dimension
+        h_ = args.ffn_hidden_size ## ffnn hidden dimension
+        l = args.num_layers ## num att. layer
+        p = args.patch_dim ## patch size
+        c = args.num_channels ## num channels
+
+        Att_computation = 4 * B * s**2 * h ## QK^T, (NxN) @ V
+        Lin_Transform = 8 * B * s * h**2 ## Q, K, V, O
+        MLP = 4 * B * s * h * h_ ## 2 Lin Transform
+        Lin_Embedding = 2 * B * s * p**2 * c * h ## (B s p^2*c) @ (p^2*c h)
+        ## Since num_classes << s * h, we can ignore num_classes.
+
+        return 3 * (l * (Att_computation +  Lin_Transform + MLP) + Lin_Embedding) ## x3 for fwd + bwd(2x)
+
+    ## Checkout Model parameters
     args = get_args()
-    from time import time
+    from torchinfo import summary
+    summary(model[0])
+    model[0]
+    # raise KeyboardInterrupt("break")
+
     # from deepspeed.profiling.flops_profiler import FlopsProfiler
     # prof = FlopsProfiler(model[0])
     # prof.start_profile()
     while iteration < args.train_iters and (args.train_tokens is None or \
         args.consumed_train_tokens < args.train_tokens):
-        strt = time()
+        strt = time.time()
         trigger(on_step_begin)
         update_num_microbatches(args.consumed_train_samples)
         if args.deepspeed:
@@ -1398,6 +1438,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                 get_num_microbatches()
             model[0].set_train_batch_size(global_batch_size)
             tot_Tflops = num_floating_point_operations(args=args, batch_size=global_batch_size) / 1000 ** 4
+            llm_tot_Tflops = llm_num_floating_point_operations(args=args, batch_size=global_batch_size) / 1000**4
             # print(f"Megatron-LM formula? tot_Tflops: {tot_Tflops}")
 
         ## Check all code updates and clean then up. 
@@ -1409,6 +1450,14 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     update_rotary_pos_emb(curriculum_seqlen)
             args.curriculum_seqlen = curriculum_seqlen
         args.curr_iteration = iteration
+        if "DATA_PATH_LOG" in os.environ:
+            args = get_args()
+            if args.rank == 0:
+                with open(os.environ["DATA_PATH_LOG"], "a") as file:
+                    file.write("\n" + "#"*30 + f" iter {iteration} " + f"#"*30 + "\n")
+                    file.flush()
+            torch.distributed.barrier()
+
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
             train_step(forward_step_func,
                     train_data_iterator,
@@ -1417,7 +1466,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     opt_param_scheduler,
                     config)
         
-        step_time1 = time() - strt
         # model_agnostic_DS_flop_count = prof.get_total_flops()
         # if torch.distributed.get_rank() == 0:
         #     print(f"DS tflop count: {model_agnostic_DS_flop_count // 10**12}")
@@ -1535,9 +1583,15 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         if profile_enabled:
             p.step()
 
-        step_time2 = time() - strt
+        step_time = time.time() - strt
         max_memory_used = torch.cuda.max_memory_allocated() / (1024**3)
-        print_rank_0(f"iteration: {iteration} time: {step_time1, step_time2} TFLOPS: {tot_Tflops / step_time2} Max_memory: {max_memory_used}")
+        samples_per_sec = global_batch_size / step_time
+        print_rank_0(f"iteration:{iteration} \t"
+                        f"time:{step_time:.2f} \t"
+                        f"LLM_TFLOPS:{llm_tot_Tflops / step_time:.2f} \t"
+                        f"TFLOPS:{tot_Tflops / step_time:.2f} \t"
+                        f"Samples/Sec:{samples_per_sec:.2f} \t"
+                        f"Max_memory:{max_memory_used:.2f}" )
 
     if profile_enabled:
         p.stop()

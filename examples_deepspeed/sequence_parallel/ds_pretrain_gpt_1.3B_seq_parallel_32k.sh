@@ -112,9 +112,9 @@ init_std=0.018
 ### Training duration configs
 ## The main termination condition, original GPT-3 paper trains for 300B tokens.
 train_tokens_in_billion=300
-train_tokens=$((${train_tokens_in_billion} * 1000000000))
-train_iter=200
-train_tokens=$(($seq_len * $global_batch_size * $train_iter))
+# train_tokens=$((${train_tokens_in_billion} * 1000000000))
+train_iter=15
+train_tokens=$(($seq_len * $global_batch_size * $train_iter)) ## The real termination condition (terminator)
 
 ## train_samples is another termination condition and also affect the number of 
 ## data samples to be indexed. Since we want to reach the train_tokens
@@ -122,6 +122,7 @@ train_tokens=$(($seq_len * $global_batch_size * $train_iter))
 ## so we just set this config large enough to make sure we have enough
 ## processed data and don't terminate by train_samples.
 train_samples=$(( 300 * 1000000000 * 2 / ${seq_len} ))
+# train_samples=$(( 300 * 1000000000 * 2 / ${seq_len} ))
 
 ## Another wall-clock time termination condition in minutes. Set it large
 ## enough to avoid undesired early termination.
@@ -134,15 +135,15 @@ exit_duration=30000000
 ## used, there are more tokens per step. Thus we need to increase warmup tokens
 ## to make sure there are enough warmup steps, which is important for training
 ## stability.
-lr_warmup_tokens_in_million=3000
-lr_warmup_tokens=$((${lr_warmup_tokens_in_million} * 1000000))
+# lr_warmup_tokens_in_million=3000
+# lr_warmup_tokens=$((${lr_warmup_tokens_in_million} * 1000000))
 ## Here we changed the LR decay tokens to align with total train tokens, since
 ## related works (e.g., https://arxiv.org/abs/2203.15556) find that setting the
 ## learning rate schedule to match the number of training tokens results in the
 ## best final model quality 
-lr_decay_tokens_in_billion=${train_tokens_in_billion}
-lr_decay_tokens=$((${lr_decay_tokens_in_billion} * 1000000000))
-lr_decay_style="cosine"
+# lr_decay_tokens_in_billion=${train_tokens_in_billion}
+# lr_decay_tokens=$((${lr_decay_tokens_in_billion} * 1000000000))
+# lr_decay_style="cosine"
 ###############################################################################
 ### Parallelism configs
 ## Model parallelism, 1 is no MP
@@ -167,7 +168,7 @@ num_gpus=$(nvidia-smi -L | wc -l)
 num_gpus_pernode=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 num_node=$(( ${num_gpus} / ${num_gpus_pernode} ))
 
-if [ ${SIZE:-""} -eq 1 ]; then
+if [ ${SIZE:--1} -eq 1 ]; then
     export CUDA_VISIBLE_DEVICES=0
     num_gpus=1
     num_gpus_pernode=1
@@ -186,7 +187,7 @@ batch_size=$((${global_batch_size} / ${dp_size}))
 ###############################################################################
 ### Misc configs
 log_interval=10
-eval_iters=10
+eval_iters=0
 eval_interval=100
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
@@ -281,8 +282,6 @@ megatron_options=" \
     --tensor-model-parallel-size 1 \
     --ds-sequence-parallel-size ${sp_size} \
     --init-method-std ${init_std} \
-    --lr-decay-tokens ${lr_decay_tokens} \
-    --lr-warmup-tokens ${lr_warmup_tokens} \
     --micro-batch-size ${batch_size} \
     --exit-duration-in-mins ${exit_duration} \
     --global-batch-size ${global_batch_size} \
@@ -292,10 +291,8 @@ megatron_options=" \
     --seq-length ${seq_len} \
     --max-position-embeddings ${seq_len} \
     --train-tokens ${train_tokens} \
-    --train-samples ${train_samples} \
     --lr ${lr} \
     --min-lr ${min_lr} \
-    --lr-decay-style ${lr_decay_style} \
     --split 949,50,1 \
     --log-interval ${log_interval} \
     --eval-interval ${eval_interval} \
@@ -305,6 +302,7 @@ megatron_options=" \
     --clip-grad 1.0 \
     --hysteresis 2 \
     --num-workers ${num_workers} \
+    --train-samples ${train_samples} \
     --fp16 \
     --seed ${seed} \
     --load ${checkpoint_path} \
@@ -322,6 +320,9 @@ megatron_options=" \
     --tensorboard-dir ${tensorboard_path} \
     --use-flash-attn-v2"
 
+    # --lr-decay-tokens ${lr_decay_tokens} \
+    # --lr-warmup-tokens ${lr_warmup_tokens} \
+    # --lr-decay-style ${lr_decay_style} \
     # --use-flash-attn-triton \
 # export DEBUG_FNAME="None"
 

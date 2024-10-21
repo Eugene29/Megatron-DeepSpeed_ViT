@@ -21,6 +21,7 @@ from megatron.training import pretrain
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.arguments import core_transformer_config_from_args
 import deepspeed
+import os
 # from deepspeed.runtime.utils import see_memory_usage
 
 def model_provider(pre_process=True, post_process=True):
@@ -78,6 +79,26 @@ def get_batch(data_iterator):
         data_dict = {}
         data_dict['image'] = data[0]
         data_dict['label'] = data[1]
+
+        if "TOY_DATALOG" in os.environ: ## tokens_consumed.log
+            ### TOY DATASET ###
+            b = int(os.environ["GBS"])
+            c = 3
+            h = int(os.environ["IMG_W"])
+            w = int(os.environ["IMG_H"])
+            num_classes = int(os.environ["NUM_CLASSES"])
+
+            img = torch.randn(b, c, h, w, dtype=torch.float16) ## B, S
+            label = torch.randint(num_classes, (b,), dtype=torch.int64) ## B, S
+            ## WRONG DP BUT STILL SHOULD GIVE THE SAME OUTPUT, JUST WITHOUT THE MEMORY SAVING AND SPEEDUP. 
+            ## THIS IS BECAUSE EACH DP SEES THE SAME DATA.
+
+            with open(os.environ["TOY_DATALOG"], mode='a') as file:
+                file.write(f"img: {img}\n")
+                file.write(f"label: {label}\n")
+            data_dict['image'] = img
+            data_dict['label'] = label
+            
     else:
         data_dict = None
 

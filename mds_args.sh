@@ -7,7 +7,6 @@ NHOSTS=$(wc -l < "${PBS_NODEFILE}")
 NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 
 
-CUDA_VISIBLE_DEVICES=0,1,2,3
 if [ ${SIZE:-"-1"} -eq 1 ]; then
     ## CUDA DEVICE (for experiments)
     CUDA_VISIBLE_DEVICES=0
@@ -66,12 +65,13 @@ export DATA=${DATA:-'CIFAR'}
 ## SET PARALLELISM DEGREES
 MP=$(($SP * $TP * $PP))
 DP=$(($NGPUS / $MP))
-if [ -n "$GBS" ]; then
+if [[ $GBS ]]; then
     MBS=$(($GBS / $DP))
-elif [ -n "$MBS" ]; then
-    MBS=$(($MBS * $MP))
+elif [[ $MBS ]]; then
+    MBS=$(($MBS * $MP)) ## Maintain GBS
+    GBS=$(($MBS * $DP)) 
 else
-    printf "\nERROR: you need to pass in MBS or GBS\n"; exit 1
+    printf "\nERROR: you need to pass in either MBS or GBS\n"; exit 1
 fi
 
 AEVARD_PATH=/eagle/datascience/vsastry/from_andre/aevard/datasets
@@ -160,7 +160,10 @@ elif [[ $DATA == 'Toy' ]]; then
 
     # TRAIN_SAMPLES=$(($NUM_EPOCHS * 10))
     # LR_WARMUP_SAMPLES=1
-    TRAIN_SAMPLES=$DP
+    ## TODO: make this generalized? 
+    # echo $TRAIN_SAMPLES
+    # exit 1
+
     LR_WARMUP_SAMPLES=0
 
     ## DATA
@@ -173,26 +176,32 @@ elif [[ $DATA == 'Toy' ]]; then
     # NUM_HEADS=8
 
     ## VIT-Large (307M)
-    # NLAYERS=24
-    # HSIZE=1024
-    # FFN_HSIZE=4096
-    # NUM_HEADS=16
+    NLAYERS=24
+    HSIZE=1024
+    FFN_HSIZE=4096
+    NUM_HEADS=16
     # NLAYERS=30
     # HSIZE=2048
     # FFN_HSIZE=8192
 
     ## VIT-2B (1.6B in VIT? Why doesn't it fit?)
     # NLAYERS=10
-    NLAYERS=5
-    HSIZE=4096
-    FFN_HSIZE=11008
+    # NLAYERS=5
+    # HSIZE=4096
+    # FFN_HSIZE=11008
     # HSIZE=16384
     # FFN_HSIZE=16384
-    NUM_HEADS=32
+    # NUM_HEADS=32
 
     # ATT_DROPOUT=0.1
     # H_DROPOUT=0.1
     echo "TRAINING ON TOYDATASET"
+fi
+
+if [[ $NUM_ITER ]]; then
+    TRAIN_SAMPLES=$(($NUM_ITER * $GBS))
+# elif [[ $NUM_EPOCHS ]]; then
+#     TRAIN_SAMPLES=$(($NUM_EPOCHS * $DP))
 fi
 
 # echo CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES
@@ -204,9 +213,9 @@ fi
 # echo DP: $DP
 # echo MP: $MP
 # exit 1
-if [ -n "$TRAIN_ITERS" ]; then
-    TRAIN_SAMPLES=$(($DP * $TRAIN_ITERS))
-fi
+# if [ -n "$TRAIN_ITERS" ]; then
+#     TRAIN_SAMPLES=$(($DP * $TRAIN_ITERS))
+# fi
 
 
 cat <<EOF > $DS_CONFIG_FNAME
@@ -256,7 +265,9 @@ export LR_WARMUP_SAMPLES="${LR_WARMUP_SAMPLES:-250}"
 export EVAL_INTERVAL=${EVAL_INTERVAL:-250}
 export DATA_PATH="${DATA_PATH}"
 export DATA=$DATA
-
+export GBS=$GBS
+export MBS=$MBS
+export NUM_CLASSES=$NUM_CLASSES
 
 ## ARCHITECTURE
 ##TODO: VIT+SP+FA has randomness issue that worsens with respect to the sequence length. 
@@ -279,7 +290,7 @@ export MIN_LR="${MIN_LR:-0.00001}"
 export NLAYERS="${NLAYERS}"
 export HSIZE="${HSIZE}"
 SEQ_LEN=$(echo "${IMG_W} * ${IMG_W} / ${PATCH_DIM}^2" | bc)  
-if [ -z GLOBAL_MEAN_POOLING ]; then
+if [ -z $GLOBAL_MEAN_POOLING ]; then
     SEQ_LEN=$((SEQ_LEN + 1))
 fi
 export SEQ_LEN

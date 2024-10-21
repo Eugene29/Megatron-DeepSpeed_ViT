@@ -11,10 +11,10 @@ echo "Launching Environment."
 # cd ..
 
 ## DATA_FILEPATHS CONSUMED
-if [ -n "$DATA_PATH_LOG" ]; then
-     export DATA_PATH_LOG=DATA_PATH_LOG
+if [[ $DATA_PATH_LOG ]]; then
      > $DATA_PATH_LOG ## clear file
-     echo "it was notempty"
+elif [[ $TOY_DATALOG ]]; then
+     > $TOY_DATALOG
 fi
 
 ## PYTHONPATH

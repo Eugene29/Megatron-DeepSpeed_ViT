@@ -102,10 +102,14 @@ def get_batch(data_iterator):
     # Broadcast data.
     if data_iterator is not None:
         data = next(data_iterator)
+        # print(f"data: {data}")
+        # print(f"len(data['text']): {data['text'].shape}")
+        # raise KeyboardInterrupt("break")
+    
         if "DATA_PATH_LOG" in os.environ: ## tokens_consumed.log
             ### TOY DATASET ###
             b = int(os.environ["global_batch_size"])
-            s = int(os.environ["seq_len"])
+            s = int(os.environ["seq_len"]) + 1 ## Q. Why and how do we add one more to the sequence? 
             V = 38406 ## Vocab length lower bound
             tokens = torch.randint(V, (b, s)) ## B, S
             ## WRONG DP BUT STILL SHOULD GIVE THE SAME OUTPUT, JUST WITHOUT THE MEMORY SAVING AND SPEEDUP. 
@@ -113,6 +117,7 @@ def get_batch(data_iterator):
 
             with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
                 file.write(f"tokens: {tokens}") ## write file
+            data = {'text': tokens}
     else:
         data = None
     data_b = tensor_parallel.broadcast_data(keys, data, datatype)
@@ -143,7 +148,7 @@ def get_batch(data_iterator):
         seq_parallel_world_rank = mpu.get_tensor_model_parallel_rank()
     seq_length = tokens.size(1)
 
-    assert seq_length % seq_parallel_world_size == 0
+    assert seq_length % seq_parallel_world_size == 0, f"seq_length: {seq_length}, seq_parallel_world_size: {seq_parallel_world_size}"
     sub_seq_length = seq_length // seq_parallel_world_size
     sub_seq_start = seq_parallel_world_rank * sub_seq_length
     sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length

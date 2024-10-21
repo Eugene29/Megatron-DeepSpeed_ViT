@@ -1450,10 +1450,19 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     update_rotary_pos_emb(curriculum_seqlen)
             args.curriculum_seqlen = curriculum_seqlen
         args.curr_iteration = iteration
+
         if "DATA_PATH_LOG" in os.environ:
             args = get_args()
             if args.rank == 0:
                 with open(os.environ["DATA_PATH_LOG"], "a") as file:
+                    file.write("\n" + "#"*30 + f" iter {iteration} " + f"#"*30 + "\n")
+                    file.flush()
+            torch.distributed.barrier() ## For cleaner prints without race conditions. 
+            
+        if "TOY_DATALOG" in os.environ:
+            args = get_args()
+            if args.rank == 0:
+                with open(os.environ["TOY_DATALOG"], "a") as file:
                     file.write("\n" + "#"*30 + f" iter {iteration} " + f"#"*30 + "\n")
                     file.flush()
             torch.distributed.barrier()

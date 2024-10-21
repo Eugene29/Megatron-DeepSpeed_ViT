@@ -27,9 +27,10 @@ DATA_PATH_LOG_PREFIX=/eagle/datascience/eku/Megatron-DeepSpeed_ViT/logs/
 # export PROFILE=1
 export GLOBAL_MEAN_POOLING=1 # global mean pooling instead of clf token
 # export CUDA_DEVICE_MAX_CONNECTIONS=1 ## TODO: What is this??
-# export GBS=1 ## always works after fix. 
-export MBS=1 ## MBS := MBS * SP in mds_args.sh to keep the Global Batch Size the same for DP & SP, 
-export DATA="Toy"; export factor=250 ## Toy dataset with flexible img_size
+export GBS=4 ## always works after fix. 
+# export MBS=1 ## MBS := MBS * SP in mds_args.sh to keep the Global Batch Size the same for DP & SP, 
+# export DATA="Toy" #; export factor=250 ## Toy dataset with flexible img_size
+# SIZE=1 NUM_ITER=15 FA=1 TOY_DATALOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP1.log bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 
 ## NOTES:
 ## VIT-TINY
@@ -40,7 +41,7 @@ export DATA="Toy"; export factor=250 ## Toy dataset with flexible img_size
 # NUM_EPOCHS=1 FA=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
 # factor=16 SIZE=1 NUM_EPOCHS=1 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 
-factor=64 NUM_EPOCHS=1 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+# factor=64 NUM_EPOCHS=1 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 # factor=64 SIZE=1 NUM_EPOCHS=1 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 
 # factor=800 SIZE=1 NUM_EPOCHS=1 FA=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
@@ -55,11 +56,15 @@ factor=64 NUM_EPOCHS=1 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.lo
 # NUM_EPOCHS=1 FA=1 SP=4 USP_ulysses=1 PACKED=5D bash $PYSCRIPT |& tee $LOGDIR/mds2.log
 
 # NUM_EPOCHS=30 FA=1 bash $PYSCRIPT |& tee $LOGDIR/mds.log
+export GBS=512
+SIZE=1 NUM_ITER=15 FA=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+SP=1   NUM_ITER=15 FA=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+SP=4   NUM_ITER=15 FA=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+
 ## Data check
-# SIZE=1 NUM_EPOCHS=1 FA=1 SP=1 TOY_DATALOG=$DATA_PATH_LOG_PREFIX/Toy_dataset_DP bash $PYSCRIPT |& tee $LOGDIR/mds2.log
-# NUM_EPOCHS=1 FA=1 SP=4 TOY_DATALOG=$DATA_PATH_LOG_PREFIX/Toy_dataset_SP bash $PYSCRIPT |& tee $LOGDIR/mds2.log
-# SIZE=1 NUM_EPOCHS=1 FA=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/datafiles_consumed.log bash $PYSCRIPT |& tee $LOGDIR/mds.log
-# SP=4 NUM_EPOCHS=1 FA=1 bash $PYSCRIPT |& tee $LOGDIR/mds.log
+# SIZE=1 NUM_ITER=15 FA=1 TOY_DATALOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP1.log bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+# SP=1   NUM_ITER=15 FA=1 TOY_DATALOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP4.log bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+# SP=4   NUM_ITER=15 FA=1 TOY_DATALOG=$DATA_PATH_LOG_PREFIX/data_consumed_SP4.log bash $PYSCRIPT |& tee $LOGDIR/mds3.log
 
 # NUM_EPOCHS=25 FA=1 SP=4 bash $PYSCRIPT |& tee $LOGDIR/mds.log
 # NUM_EPOCHS=25 FA=1 USP_ulysses=1 SP=4 bash $PYSCRIPT |& tee $LOGDIR/mds.log

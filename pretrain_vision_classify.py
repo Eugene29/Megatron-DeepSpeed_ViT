@@ -3,7 +3,6 @@
 """Pretrain VIT"""
 from mpi4py import MPI
 import torch.distributed as dist
-import torch.distributed
 comm = MPI.COMM_WORLD
 comm.Barrier()
 
@@ -73,34 +72,92 @@ def get_batch(data_iterator):
     Returns:
         sample: A data sample with images, tokens, etc.
     """
-    # Broadcast data.
-    if data_iterator is not None:
-        data = next(data_iterator)
-        data_dict = {}
-        data_dict['image'] = data[0]
-        data_dict['label'] = data[1]
+    args = get_args()
+    # rank = args.get_rank()
+    rank = args.rank
+    dp = mpu.get_data_parallel_world_size()
+    dp_group = mpu.get_data_parallel_group()
+    dp_src_rank = mpu.get_data_parallel_src_rank()
 
-        if "TOY_DATALOG" in os.environ: ## tokens_consumed.log
-            ### TOY DATASET ###
-            b = int(os.environ["GBS"])
-            c = 3
-            h = int(os.environ["IMG_W"])
-            w = int(os.environ["IMG_H"])
+    ## Generate Random TOY dataset
+    # raise KeyboardInterrupt()
+    if os.environ["DATA"] == "TOY":
+        ## 1. First, only rank0 generates the data
+        ## 2. rank0 scatters data to other sp_rank=1
+
+        # raise KeyboardInterrupt()
+        dev = deepspeed.accelerator.get_accelerator().current_device()
+        # raise KeyboardInterrupt()
+
+        b = int(os.environ["GBS"])
+        c = args.num_channels
+        h = int(os.environ["IMG_W"])
+        w = int(os.environ["IMG_H"])
+
+        MBS = int(os.environ["MBS"])
+
+        assert MBS == b / dp, "Environment Var MBS is not local MBS"
+        assert b % dp == 0, "global batch size is not divisible by dp degree"
+
+        img_dtype = torch.float16
+        label_dtype = torch.int64
+
+        # raise KeyboardInterrupt()
+        img = torch.empty(b // dp, c, h, w, dtype=img_dtype, device=dev)
+        label = torch.empty(b // dp, dtype=label_dtype, device=dev)
+
+        # raise KeyboardInterrupt()
+        if rank == 0:
+            ## Generate TOY DATASET on rank0
             num_classes = int(os.environ["NUM_CLASSES"])
+            full_img = torch.randn(b, c, h, w, dtype=img_dtype, device=dev) ## B, S
+            full_label = torch.randint(num_classes, (b,), dtype=label_dtype, device=dev) ## B, S
 
-            img = torch.randn(b, c, h, w, dtype=torch.float16) ## B, S
-            label = torch.randint(num_classes, (b,), dtype=torch.int64) ## B, S
-            ## WRONG DP BUT STILL SHOULD GIVE THE SAME OUTPUT, JUST WITHOUT THE MEMORY SAVING AND SPEEDUP. 
-            ## THIS IS BECAUSE EACH DP SEES THE SAME DATA.
+            img_list = [full_img[MBS*i: MBS*i + MBS]for i in range(dp)]
+            label_list = [full_label[MBS*i: MBS*i + MBS]for i in range(dp)]
 
-            with open(os.environ["TOY_DATALOG"], mode='a') as file:
-                file.write(f"img: {img}\n")
-                file.write(f"label: {label}\n")
-            data_dict['image'] = img
-            data_dict['label'] = label
-            
+            # ## Logging Full TOY data
+            # with open(os.environ["TOY_DATALOG"], mode='a') as file:
+            #     file.write(f"img: {str(full_img)}\n")
+            #     file.write(f"label: {str(full_label)}\n")
+        else:
+            img_list = None
+            label_list = None
+
+        if dp_src_rank == 0: ## only communicate within the first dp group
+            ## Distribute TOY DATASET across DP src ranks
+            dist.scatter(img, img_list, src=0, group=dp_group)
+            dist.scatter(label, label_list, src=0, group=dp_group)
+
+            data_dict = {"image": img, "label": label}
+        else:
+            data_dict = None
     else:
-        data_dict = None
+        # Broadcast data.
+        if data_iterator is not None:
+            data = next(data_iterator)
+            data_dict = {}
+            data_dict['image'] = data[0]
+            data_dict['label'] = data[1]
+        else:
+            data_dict = None
+
+    # raise KeyboardInterrupt()
+    ## Log data (only from the first dp group)
+    if "DATA_PATH_LOG" in os.environ and dp_src_rank == 0:
+        with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
+            for i in range(dp):
+                if rank == i:
+                    file.write(f"img: {data_dict['image']}\n")
+                    file.write(f"label: {data_dict['label']}\n")
+                dist.barrier(group=dp_group) ## communicate only within the first group.
+
+        # pass
+    #     with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
+    #         pass
+
+        
+    # raise KeyboardInterrupt()
 
     data_i = tensor_parallel.broadcast_data(["label"], data_dict, torch.int64) ##TODO: lower precision, will it get angry at me if I set it to 16 or 32? 
     data_f = tensor_parallel.broadcast_data(["image"], data_dict, torch.float16) ## images are in int8 -> fp16
@@ -114,9 +171,9 @@ def loss_func(labels, output_tensor):
     # def gather_last_dim_from_sequence_parallel_region(input_, tensor_parallel_output_grad=True):
     #     return _GatherFromSequenceParallelRegion.apply(input_, tensor_parallel_output_grad)
 
-    seq_rank = mpu.get_sequence_parallel_rank()
-    seq_world_size = mpu.get_sequence_parallel_world_size()
-    # # print(f"seq_rank: {mpu.get_sequence_parallel_rank()}")
+    sp_rank = mpu.get_sequence_parallel_rank()
+    sp_world_size = mpu.get_sequence_parallel_world_size()
+    # # print(f"sp_rank: {mpu.get_sequence_parallel_rank()}")
     # logits = output_tensor.contiguous().float()
     # # print(f"logits: {logits}")
     # args = get_args()
@@ -128,22 +185,22 @@ def loss_func(labels, output_tensor):
     # if mpu.get_sequence_parallel_rank() == 0:
     # print(f"labels.shape: {labels.shape}")
     # print(f"output_tensor.shape: {output_tensor.shape}")
-    # if seq_rank > 1:
+    # if sp_rank > 1:
     #     dist.broadcast(logits, src=0, group=mpu.get_sequence_parallel_group())
     # from megatron.core.sequence_parallel import vocab_sequence_parallel_cross_entropy
     # from megatron.core.tensor_parallel import vocab_parallel_cross_entropy
     logits = output_tensor.contiguous().float()
-    if seq_rank == 0:
+    if sp_rank == 0:
         logits = output_tensor.contiguous().float()
     else:
         logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
     outputs = torch.argmax(logits, -1)
     correct = (outputs == labels).float()
     accuracy = torch.mean(correct)
-    if seq_world_size > 1:
-        # if seq_rank == 0:
+    if sp_world_size > 1:
+        # if sp_rank == 0:
         # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
-        loss = F.cross_entropy(logits, labels) #/ seq_world_size ## Currently backwards are called by 4 GPUS (same loss)?
+        loss = F.cross_entropy(logits, labels) #/ sp_world_size ## Currently backwards are called by 4 GPUS (same loss)?
         # else:
         #     loss = torch.tensor(0, device=torch.cuda.current_device())
         #     accuracy = torch.tensor(0, device=torch.cuda.current_device())
@@ -156,15 +213,15 @@ def loss_func(labels, output_tensor):
     debug_mode = 'DEBUG_FNAME' in os.environ
     if debug_mode:
         debug_fname = os.environ["DEBUG_FNAME"]
-        if seq_rank==0:
+        if sp_rank==0:
             torch.save(output_tensor, f"{debug_fname}.pt")
 
         with open(debug_fname, "a") as f:
-            f.write(f"\n[{seq_rank}] output after head: {output_tensor}\n")
-            # f.write(f"\n[{seq_rank}] output after head shape: {output_tensor.shape}\n")
-            f.write(f"\n[{seq_rank}] loss: {loss}\n")
+            f.write(f"\n[{sp_rank}] output after head: {output_tensor}\n")
+            # f.write(f"\n[{sp_rank}] output after head shape: {output_tensor.shape}\n")
+            f.write(f"\n[{sp_rank}] loss: {loss}\n")
 
-    # if seq_rank==0:
+    # if sp_rank==0:
     #     logits = logits.T
     #     # torch.distributed.gather(logits, dst=0, group=group)
     #     # from megatron.core.tensor_parallel import mappings 
@@ -190,13 +247,13 @@ def loss_func(labels, output_tensor):
     # # dist.broadcast(accuracy, src=0, group=group)
 
     # with open(debug_fname, "a") as f:
-    #     f.write(f"[{seq_rank}] Got hung here?\n")
+    #     f.write(f"[{sp_rank}] Got hung here?\n")
 
     # with open(debug_fname, "a") as f:
-    #     f.write(f"[{seq_rank}] output after head: {output_tensor}\n")
+    #     f.write(f"[{sp_rank}] output after head: {output_tensor}\n")
 
     # with open(debug_fname, "a") as f:
-    #     f.write(f"[{seq_rank}] real losses_reduced: {loss}\n")
+    #     f.write(f"[{sp_rank}] real losses_reduced: {loss}\n")
     # raise KeyboardInterrupt("break")
 
     # print(f"loss: {loss}")
@@ -224,8 +281,8 @@ def loss_func(labels, output_tensor):
     # raise KeyError("breakdance")
 
     # comm.Barrier()
-    # print(f"[{seq_rank}] loss: {loss}")
-    # print(f"[{seq_rank}] accuracy: {accuracy}")
+    # print(f"[{sp_rank}] loss: {loss}")
+    # print(f"[{sp_rank}] accuracy: {accuracy}")
     ## output, logits, loss: [b, ]
     # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels).mean() ##TODO: implement later for better throughput
     # print_rank_0(f"output_tensor.shape: {output_tensor.shape}")
@@ -242,7 +299,7 @@ def loss_func(labels, output_tensor):
     averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
     # averaged_loss = loss, accuracy
 
-    # return loss, {"loss": averaged_loss[0] * seq_world_size, "accuracy": averaged_loss[1] * seq_world_size}
+    # return loss, {"loss": averaged_loss[0] * sp_world_size, "accuracy": averaged_loss[1] * sp_world_size}
     return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
 
 
@@ -304,5 +361,5 @@ if __name__ == "__main__":
         forward_step,
         args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
     )
-    print("Pretrain completed.")
+    print_rank_0("Pretrain completed.")
     exit()

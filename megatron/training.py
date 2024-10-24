@@ -155,6 +155,7 @@ def pretrain(train_valid_test_dataset_provider,
 
     timers = get_timers()
 
+    # raise KeyboardInterrupt()
     if args.deepspeed:
         args.deepspeed_config_dict = _create_ds_config_dict()
         if "curriculum_learning" in args.deepspeed_config_dict and \
@@ -169,15 +170,18 @@ def pretrain(train_valid_test_dataset_provider,
         if "compression_training" in args.deepspeed_config_dict:
             args.compression_training = True
 
+    # raise KeyboardInterrupt()
     # Model, optimizer, and learning rate.
     timers('model-and-optimizer-setup', log_level=0).start(barrier=True)
     model, optimizer, opt_param_scheduler = setup_model_and_optimizer(
         model_provider, model_type, teacher=False, data_post_process=data_post_process,
         build_train_valid_test_datasets_provider=train_valid_test_dataset_provider)
+    # raise KeyboardInterrupt()
     timers('model-and-optimizer-setup').stop()
     print_datetime('after model, optimizer, and learning rate '
                    'scheduler are built')
 
+    # raise KeyboardInterrupt()
     # Data stuff.
     timers('train/valid/test-data-iterators-setup', log_level=0).start(
         barrier=True)
@@ -535,6 +539,7 @@ def setup_model_and_optimizer(model_provider_func,
 
     model = get_model(model_provider_func, model_type)
 
+    # raise KeyboardInterrupt()
     # initialize the compression here
     student_global_steps = 0
     if args.kd or args.mos:
@@ -633,6 +638,7 @@ def setup_model_and_optimizer(model_provider_func,
             assert model.grid.get_data_parallel_rank() == mpu.get_data_parallel_rank()
         model = [model]
 
+    # raise KeyboardInterrupt()
     # Compression has its own checkpoint loading path (e.g, loading both teacher and student models). So if compression is enabled, we skip the following checkpoint loading.
     no_post_init_checkpoint_loading = args.kd or args.mos
     if not no_post_init_checkpoint_loading:
@@ -647,6 +653,7 @@ def setup_model_and_optimizer(model_provider_func,
     else:
         model[0].global_steps = student_global_steps
 
+    # raise KeyboardInterrupt()
     # We only support local DDP with multiple micro-batches.
     if len(model) > 1 or mpu.get_pipeline_model_parallel_world_size() > 1:
         assert args.DDP_impl == 'local'
@@ -1192,7 +1199,6 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             elapsed_time,
             total_iterations
         )
-        print(f"MDS' tflops: {tflops}")        
 
         samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
         tokens_per_sec = samples_per_sec * seq_len
@@ -1418,10 +1424,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
     ## Checkout Model parameters
     args = get_args()
-    from torchinfo import summary
-    summary(model[0])
-    model[0]
-    # raise KeyboardInterrupt("break")
+    if args.rank == 0:
+        from torchinfo import summary
+        summary(model[0])
+        # model[0]
 
     # from deepspeed.profiling.flops_profiler import FlopsProfiler
     # prof = FlopsProfiler(model[0])

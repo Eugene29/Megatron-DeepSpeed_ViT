@@ -5,17 +5,18 @@
 import math
 import einops
 import torch
-import apex
+# import apex
+import os
 import torch.distributed
 import torch.nn.functional as F
 from megatron import get_args
 from megatron.model.transformer import ParallelTransformer
-from megatron.core import parallel_state as mpu
 from megatron.model.utils import (
-    get_linear_layer,
+    # get_linear_layer,
     init_method_normal,
-    scaled_init_method_normal,
+    # scaled_init_method_normal,
 )
+from megatron.core import parallel_state as mpu
 from megatron.model.module import MegatronModule
 from megatron import get_args, print_rank_0
 
@@ -72,6 +73,7 @@ def isPerfectSquare(x):
     return False
 
 
+## Q. What is this doing? Hooks? 
 def twod_interpolate_position_embeddings_hook(
     state_dict,
     prefix,
@@ -124,7 +126,7 @@ def twod_interpolate_position_embeddings_hook(
             scale_factor = (gs_new[0] / gs_input, gs_new[1] / gs_input)
 
             input_param_grid = F.interpolate(
-                input_param_grid, scale_factor=scale_factor, mode="bilinear"
+                input_param_grid, scale_factor=scale_factor, mode="bilinear" ## Q. What does bilinear mean again? 
             )
 
             input_param_grid = input_param_grid.half()
@@ -203,7 +205,7 @@ class VitBackbone(MegatronModule):
             self.pos_encoding = args.pos_encoding ## TODO: pass it as init argument or as config
             if self.pos_encoding:
                 ## TODO: Understanding the theroy behind pos encoding and optimize it for longer sequences. 
-                def positionalencoding1d(d_model, length):
+                def positionalencoding1d(d_model, length, dev):
                     """
                     :param d_model: dimension of the model
                     :param length: length of positions
@@ -213,15 +215,25 @@ class VitBackbone(MegatronModule):
                         raise ValueError("Cannot use sin/cos positional encoding with "
                                         "odd dim (got dim={:d})".format(d_model))
                     dtype = torch.float16
-                    pe = torch.zeros((length, d_model), dtype=dtype)
-                    position = torch.arange(0, length, dtype=dtype).unsqueeze(1)
-                    div_term = torch.exp((torch.arange(0, d_model, 2, dtype=dtype) *
+                    pe = torch.zeros((length, d_model), dtype=dtype, device=dev)
+                    position = torch.arange(0, length, dtype=dtype, device=dev).unsqueeze(1)
+                    div_term = torch.exp((torch.arange(0, d_model, 2, dtype=dtype, device=dev) *
                                         -(math.log(10000.0) / d_model)))
                     pe[:, 0::2] = torch.sin(position.float() * div_term)
                     pe[:, 1::2] = torch.cos(position.float() * div_term)
                     return pe
-                
-                self.position_embeddings = positionalencoding1d(self.hidden_size, self.seq_length).to(args.rank)
+
+                from deepspeed.accelerator import get_accelerator
+                dev = get_accelerator().current_device() ## NOTE: although rank are unique, ranging from 0~num_devices, device names can be the same across nodes. 
+                pos_encoding = positionalencoding1d(self.hidden_size, self.seq_length, dev)
+
+                sp = mpu.get_sequence_parallel_world_size()
+                sp_rank = mpu.get_sequence_parallel_rank()
+                sub_seq_length = self.seq_length // sp
+                sub_seq_start = sp_rank * sub_seq_length
+                sub_seq_end = (sp_rank + 1) * sub_seq_length
+
+                self.position_embeddings = pos_encoding[sub_seq_start:sub_seq_end, :] ## s, h ?
             else:
                 self.position_embeddings = torch.nn.Embedding(
                     self.seq_length, self.hidden_size
@@ -262,7 +274,20 @@ class VitBackbone(MegatronModule):
         self.transformer.set_input_tensor(input_tensor)
 
     def forward(self, input):
-        # print_rank_0(f"input: {input.shape}")
+        # if "DATA_PATH_LOG" in os.environ:
+        #     from megatron.core import parallel_state as mpu
+        #     dp_world_size = mpu.get_data_parallel_world_size()
+        #     dp_group = mpu.get_data_parallel_group()
+        #     dp_rank = mpu.get_data_parallel_rank()
+
+        #     import torch.distributed as dist
+        #     with open(os.environ["DATA_PATH_LOG"], "a") as file:
+        #         for i in range(dp_world_size):
+        #             if dp_rank == i:
+        #                 file.write(str(input) + '\n')
+        #                 file.flush()
+        #             dist.barrier(group=dp_group)
+
         if self.pre_process:
             rearranged_input = einops.rearrange(
                 input,
@@ -271,86 +296,58 @@ class VitBackbone(MegatronModule):
                 p2=self.patch_dim,
             )
 
+            if self.ds_sequence_parallel:
+                sp = mpu.get_sequence_parallel_world_size()
+                sp_rank = mpu.get_sequence_parallel_rank()
+                
+                assert self.seq_length % sp == 0
+
+                ##TODO: Enable undivisible SP? i.e. automatic token padding to enable SP. 
+                sub_seq_length = self.seq_length // sp
+                sub_seq_start = sp_rank * sub_seq_length
+                sub_seq_end = (sp_rank + 1) * sub_seq_length
+
+                rearranged_input = rearranged_input[:, sub_seq_start:sub_seq_end, :] ## b, s, h
+                
             assert rearranged_input.dtype == torch.half
             encoder_output = self.linear_encoder(rearranged_input)
 
-            concatenated_tokens = encoder_output
             if self.class_token:
                 cls_tokens = self.cls_token.expand(encoder_output.shape[0], -1, -1)
                 concatenated_tokens = torch.cat((cls_tokens, encoder_output), dim=1)
+            else:
+                concatenated_tokens = encoder_output
 
             if self.pos_encoding:
-                # print(f"self.position_embeddings: {self.position_embeddings.shape}")
-                # print(f"concatenated_tokens: {concatenated_tokens.shape}")
                 token_embeddings = concatenated_tokens + self.position_embeddings
-
             else:
+                ## TODO: Include clf token in pos encoding while both parallelizing sequence and pos embedding. 
                 token_embeddings = concatenated_tokens + \
                         self.position_embeddings(self.position_ids[:, :concatenated_tokens.shape[1]])
-
-            # [b, s, h] => [s, b, h]
-            # token_embeddings = token_embeddings.transpose(0, 1).contiguous()
-            hidden_states = token_embeddings.transpose(0, 1).contiguous()
-            # hidden_states = self.embedding_dropout(token_embeddings) 
-            ##TODO: Possible Throughput Gains in the Future
-            ##1. Could run preprocess first on rank 0, using torch.barrier(), try tensor_parallel for boradcasting
-            ##3. Even better, I could split before linear encoding or before patchifying.
-            ##NOTE: Priming DS Seq. Parallelism by splitting [s, b, h] -> [s/sp, b, h]
-
-            ##TODO: (CRITICAL) Don't we need to use sequence_data_parallel instead of sequence_parallel_rank? However, sequence_data_parallel is just ddp? 
-            # args = get_args()
-            # print(f"rank: {args.rank}")
-            # print(f"get_sequence_parallel_rank: {mpu.get_sequence_parallel_rank()}")
-            # print(f"get_sequence_data_parallel_rank: {mpu.get_sequence_data_parallel_rank()}")
             
+            hidden_states = token_embeddings.transpose(0, 1).contiguous() # [b, s, h] => [s, b, h]
+
+            ## Q. Don't we need to use sequence_data_parallel instead of sequence_parallel_rank? However, sequence_data_parallel is just ddp? 
+            ## No, sequence_data_parallel rank is the rank that is unique across both sp and dp groups. 
+            
+            ## Previous code: 
             # args = get_args()
             # print(f"args.rank: {args.rank}, hidden_states (before chunking): {hidden_states.shape}")
             # print(F"hidden_states.shape: {hidden_states.shape}")
-            # hidden_states = hidden_states[:-1] ##TODO: EXCLUDE LAST SEQUENCE TOKEN TO MATCH UP DIMENSIONALITY FOR NOW...
-            if self.ds_sequence_parallel:
-                seq_parallel_world_size = mpu.get_sequence_parallel_world_size()
-                seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
-                # print(f"seq_rank, torch_rank: {mpu.get_sequence_parallel_rank(), torch.distributed.get_rank()}")
+            # if self.ds_sequence_parallel:
+            #     sp = mpu.get_sequence_parallel_world_size()
+            #     sp_rank = mpu.get_sequence_parallel_rank()
                 
-                # assert self.seq_length % seq_parallel_world_size == 0
-                ## This should terminate it, and if you want more seq_length...
-                sub_seq_length = self.seq_length // seq_parallel_world_size
-                sub_seq_start = seq_parallel_world_rank * sub_seq_length
-                ##TODO: Enable undivisible SP? 
-                sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
-                # if seq_parallel_world_rank == seq_parallel_world_size-1:
-                #     print("hi")
-                    # sub_seq_end = self.seq_length
-                # else:
-                #     print("hi")
-                    # sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
-                # torch.distributed.barrier()
-                hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
-                # if seq_parallel_world_rank != seq_parallel_world_size - 1:
-                #     hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
-                # else:
-                #     hidden_states = hidden_states[sub_seq_start:, :, :]
-                # print(f"sub_seq_start, sub_seq_end: {sub_seq_start, sub_seq_end}")
-                # print(f"seq_parallel_world_rank: {seq_parallel_world_rank}")
-                # print(f"seq_parallel_world_rank: {seq_parallel_world_rank}")
-                # print(f"preprocessed hidden_states.shape: {hidden_states.shape}")
-            # print(f"args.rank: {args.rank}, hidden_states (after chunking): {hidden_states.shape}")
+            #     assert self.seq_length % sp == 0
+            #     ## This should terminate it, and if you want more seq_length...
+            #     sub_seq_length = self.seq_length // sp
+            #     sub_seq_start = sp_rank * sub_seq_length
+            #     sub_seq_end = (sp_rank + 1) * sub_seq_length
+            #     hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
             hidden_states = self.embedding_dropout(hidden_states) 
         else:
             hidden_states = input
 
-        # if self.ds_sequence_parallel:
-        #     hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
-
-        # with open("debug/output_SP.txt", "w") as f:
-        #     if self.ds_sequence_parallel:
-        #         f.write(f"first hidden_state: {gather_from_sequence_parallel_group(hidden_states)}")
-        #         f.write(f"first hidden_state shape: {gather_from_sequence_parallel_group(hidden_states).shape}")
-        #     else:
-        #         f.write(f"first hidden_state: {hidden_states}")
-        #         f.write(f"first hidden_state shape: {hidden_states.shape}")
-
-        import os
         debug_mode = "DEBUG_FNAME" in os.environ
         if debug_mode:
             debug_fname = os.environ["DEBUG_FNAME"]
@@ -369,9 +366,9 @@ class VitBackbone(MegatronModule):
         # debug_fname = os.environ['DEBUG_FNAME']
         # with open(debug_fname, "a") as f:
         #     if self.ds_sequence_parallel:
-        #         # if seq_parallel_world_rank == 0:
+        #         # if sp_rank == 0:
         #             ## just the first block
-        #         f.write(f"seq_parallel_world_rank: {seq_parallel_world_rank}\n")
+        #         f.write(f"sp_rank: {sp_rank}\n")
         #         # f.write(f"first hidden_state: {gather_from_sequence_parallel_group(hidden_states)}\n")
         #         # f.write(f"first hidden_state shape: {gather_from_sequence_dparallel_group(hidden_states).shape}\n")
         #         f.write(f"(after transformer) hidden_state: {hidden_states}\n")
@@ -421,7 +418,7 @@ class VitBackbone(MegatronModule):
         #     ## round to the src rank
         #     ## TODO: replace this with get data parallel source rank? 
         #     world_rank = mpu.get_sequence_data_parallel_rank()
-        #     remainder = world_rank % seq_parallel_world_size
+        #     remainder = world_rank % sp
         #     seq_src_rank = world_rank - remainder 
         #     with torch.no_grad():
         #         torch.distributed.broadcast(hidden_states, src=seq_src_rank, group=mpu.get_sequence_parallel_group()) ## TODO: Remove this if you are using global mean pool instead of clf token. I think
@@ -432,17 +429,30 @@ class VitBackbone(MegatronModule):
 
         # torch.distributed.broadcast(hidden_states, src=3, group=mpu.get_sequence_parallel_group())
         # if self.ds_sequence_parallel:
-        #     sub_hidden_size = self.hidden_size // seq_parallel_world_size
-        #     sub_hid_start = seq_parallel_world_rank * sub_hidden_size
-        #     sub_hid_end = (seq_parallel_world_rank + 1) * sub_hidden_size
+        #     sub_hidden_size = self.hidden_size // sp
+        #     sub_hid_start = sp_rank * sub_hidden_size
+        #     sub_hid_end = (sp_rank + 1) * sub_hidden_size
         #     hidden_states = hidden_states[:, sub_hid_start:sub_hid_end] ## b, h/SP
-
 
         if debug_mode:
             with open(debug_fname, "a") as f:
                 f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head: {hidden_states}\n")
                 f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head shape: {hidden_states.shape}\n")
 
+        # if "DATA_PATH_LOG" in os.environ:
+        #     dp_world_size = mpu.get_data_parallel_world_size()
+        #     dp_group = mpu.get_data_parallel_group()
+        #     dp_rank = mpu.get_data_parallel_rank()
+        #     mp_world_size = 
+
+        #     import torch.distributed as dist
+        #     with open(os.environ["DATA_PATH_LOG"], "a") as file:
+        #         for i in range(dp_world_size):
+        #             # if dp_rank == i:
+        #             if rank // == i:
+        #                 file.write("output (before head MLP): " + str(hidden_states) + '\n')
+        #                 file.flush()
+        #             dist.barrier(group=dp_group)
 
         return hidden_states
     

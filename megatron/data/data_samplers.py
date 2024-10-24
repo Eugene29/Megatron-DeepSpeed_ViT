@@ -85,10 +85,18 @@ class MegatronPretrainingSampler:
     def __iter__(self):
         batch = []
         # Last batch will be dropped if drop_last is not set False
+        # fname = "data_samplers_DP.log"
+        # with open(fname, mode="w") as file:
+        #     pass
+
         for idx in range(self.consumed_samples, self.total_samples):
             batch.append(idx)
             if len(batch) == self.micro_batch_times_data_parallel_size:
+                # with open(fname, mode="a") as file:
+                #     file.write()
                 start_idx, end_idx = self.get_start_end_idx()
+                # print(f"batch: {batch}")
+                # print(f"batch_idx: {batch[start_idx:end_idx]}")
                 yield batch[start_idx:end_idx]
                 batch = []
 
@@ -105,6 +113,7 @@ class RandomSeedDataset(Dataset):
         self.base_seed = args.seed
         self.curr_seed = args.seed
         self.dataset = dataset
+        # print(f"len(self.dataset): {len(self.dataset)}")
 
     def __len__(self):
         return len(self.dataset)
@@ -150,9 +159,9 @@ class MegatronPretrainingRandomSampler:
         return self.total_samples
 
     def __iter__(self):
-        active_total_samples = self.total_samples - self.last_batch_size
+        active_total_samples = self.total_samples - self.last_batch_size ## discard last batch_size?
         self.epoch = self.consumed_samples // active_total_samples
-        current_epoch_samples = self.consumed_samples % active_total_samples
+        current_epoch_samples = self.consumed_samples % active_total_samples ## samples consumed in current epoch
         assert current_epoch_samples % self.micro_batch_times_data_parallel_size == 0
 
         if isinstance(self.dataset, RandomSeedDataset):
@@ -170,16 +179,32 @@ class MegatronPretrainingRandomSampler:
             random_idx = torch.randperm(bucket_size, generator=g).tolist()
             idx_range = [start_idx + x for x in random_idx[bucket_offset:]]
         else:
-            full_bucket_size = (self.total_samples // self.micro_batch_size) \
-                                * self.micro_batch_size
+            import os
+            if 'drop_last_batch_with_GBS' in os.environ:
+                full_bucket_size = (self.total_samples // self.micro_batch_times_data_parallel_size) \
+                                    * self.micro_batch_times_data_parallel_size
+                print("yes it is called")
+            else:
+                full_bucket_size = (self.total_samples // self.micro_batch_size) \
+                                    * self.micro_batch_size
             full_bucket_offset = current_epoch_samples
             g = torch.Generator()
             g.manual_seed(self.epoch)
             idx_range_total = \
                 torch.randperm(full_bucket_size, generator=g).tolist()
             idx_range_active = idx_range_total[full_bucket_offset:]
+            # with open("/tmp/idx_range_active2.txt", mode="w") as file:
+            #     file.write(str(idx_range_active))
             idx_range = idx_range_active[self.data_parallel_rank::self.data_parallel_size]
 
+        ## Q. What is torch.randperm doing?
+            ## randperm here creates a iterator that produces indices. This order stays constant if the bucket_size is the same. 
+        ## Q. is current_epoch_samples constant at least for VIT?
+            ## Should be if your not checkpointing. 
+        ## Q. map out the data fetching process for VIT
+            ## 
+        ## Q. Does single produce same data generator? If so, we don't need test script then? 
+        
         # print(f"dataset: {self.dataset}")
         # print(f"total_samples: {self.total_samples}")
         # print(f"consumed_samples: {self.consumed_samples}")
@@ -192,7 +217,8 @@ class MegatronPretrainingRandomSampler:
         # print(f"full_bucket_size: {full_bucket_size}")
         # print(f"full_bucket_offset: {full_bucket_offset}")
         # print(f"epoch: {self.epoch}")
-        # ##NOTE: There is a difference in idx_range
+        # print(f"idx_range: {idx_range}")
+        ## NOTE: There is a difference in idx_range
         # breakpoint()
 
         batch = []

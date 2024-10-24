@@ -75,7 +75,7 @@ else
 fi
 
 AEVARD_PATH=/eagle/datascience/vsastry/from_andre/aevard/datasets
-EKU_PATH=/eagle/datascience/eku/data/
+EKU_PATH=/eagle/datascience/eku/data
 if [[ $DATA == 'IMNET' ]]; then
     # DATA_PATH="~/aevard/datasets/imnet-20/train ~/aevard/datasets/imnet-20/valid"
     DATA_PATH="$AEVARD_PATH/imnet-20/train $AEVARD_PATH/imnet-20/valid"
@@ -117,8 +117,7 @@ elif [[ $DATA == 'CIFAR' ]]; then
     EVAL_ITERS=19 ##TODO: Val samples?
     # EVAL_ITERS=$((10000 / 512)) ##TODO: Val samples?
     TRAIN_SAMPLES=$(($NUM_EPOCHS * $TRAIN_SIZE))
-    # TRAIN_SAMPLES=$((10 * 512)) ## TODO: ENABLE FOR PROFILING (5 steps)
-    LR_WARMUP_SAMPLES=500
+    LR_WARMUP_SAMPLES=0
     DS_CONFIG_FNAME="CIFAR.json"
 
     ## ViT-Tiny
@@ -142,7 +141,7 @@ elif [[ $DATA == 'CIFAR' ]]; then
     ## EOF is super weird but correct. 
     echo "TRAINING ON CIFAR"
 
-elif [[ $DATA == 'Toy' ]]; then
+elif [[ $DATA == 'TOY' ]]; then
     ##Toy Dataset
     # DATA_PATH="~/aevard/datasets/CIFAR10/train ~/aevard/datasets/CIFAR10/valid"
     DATA_PATH="$EKU_PATH/CIFAR10/train $EKU_PATH/CIFAR10/valid"
@@ -167,7 +166,7 @@ elif [[ $DATA == 'Toy' ]]; then
     LR_WARMUP_SAMPLES=0
 
     ## DATA
-    DS_CONFIG_FNAME="Toy.json"
+    DS_CONFIG_FNAME="TOY.json"
 
     ## ViT-Tiny (1M)
     # NLAYERS=6
@@ -180,6 +179,7 @@ elif [[ $DATA == 'Toy' ]]; then
     HSIZE=1024
     FFN_HSIZE=4096
     NUM_HEADS=16
+
     # NLAYERS=30
     # HSIZE=2048
     # FFN_HSIZE=8192
@@ -198,8 +198,8 @@ elif [[ $DATA == 'Toy' ]]; then
     echo "TRAINING ON TOYDATASET"
 fi
 
-if [[ $NUM_ITER ]]; then
-    TRAIN_SAMPLES=$(($NUM_ITER * $GBS))
+if [[ $NUM_ITERS ]]; then
+    TRAIN_SAMPLES=$(($NUM_ITERS * $GBS))
 # elif [[ $NUM_EPOCHS ]]; then
 #     TRAIN_SAMPLES=$(($NUM_EPOCHS * $DP))
 fi
@@ -289,11 +289,11 @@ export LR="${LR:-1e-4}"
 export MIN_LR="${MIN_LR:-0.00001}"
 export NLAYERS="${NLAYERS}"
 export HSIZE="${HSIZE}"
-SEQ_LEN=$(echo "${IMG_W} * ${IMG_W} / ${PATCH_DIM}^2" | bc)  
-if [ -z $GLOBAL_MEAN_POOLING ]; then
-    SEQ_LEN=$((SEQ_LEN + 1))
-fi
-export SEQ_LEN
+if [[ $GLOBAL_MEAN_POOLING ]]; then
+    export SEQ_LEN=$(echo "${IMG_W} * ${IMG_W} / ${PATCH_DIM}^2" | bc)  
+else
+    export SEQ_LEN=$(echo "${IMG_W} * ${IMG_W} / ${PATCH_DIM}^2 + 1" | bc)  ## TODO: update when you add the padded tokens features. 
+fi 
 echo "Sequence length: ${SEQ_LEN}"
 export NUM_HEADS="${NUM_HEADS}"
 

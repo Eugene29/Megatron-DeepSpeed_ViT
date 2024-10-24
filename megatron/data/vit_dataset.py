@@ -230,9 +230,10 @@ def build_train_valid_datasets(data_path, image_size=224):
 
     # training dataset
     train_data_path = data_path[0] if len(data_path) <= 2 else data_path[2]
-    if os.environ["DATA"] == "Toy":
-        train_transform, val_transform = None, None
+    # if os.environ["DATA"] == "TOY":
+    #     train_transform, val_transform = None, None
 
+    # raise KeyboardInterrupt()
     train_data = ImageFolder(
         root=train_data_path,
         transform=train_transform,

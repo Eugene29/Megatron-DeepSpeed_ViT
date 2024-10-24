@@ -32,6 +32,7 @@
 # https://github.com/pytorch/vision/blob/main/torchvision/datasets/folder.py
 # added support for classes_fraction and data_per_class_fraction
 
+import torch.distributed
 from torchvision.datasets import VisionDataset
 from PIL import Image
 
@@ -215,36 +216,54 @@ class DatasetFolder(VisionDataset):
         Returns:
             tuple: (sample, target) where target is class_index of the target class.
         """
+
+        ## My version. NOTE: This function is not called when DATA=TOY
+        # try:
+        #     path, target = self.samples[index]
+        #     sample = self.loader(path)
+        # except Exception as e:
+        #     print(f"Exception {e} was called")
+
+
+        ## TODO: Q. why are we doing this self.total number of times for each img? 
         curr_index = index
-        from megatron import get_args
-        args = get_args()
         for x in range(self.total):
             try:
-                if os.environ["DATA"] == "Toy":
+                if os.environ["DATA"] == "TOY":
                     #### Toy Dataset ####
-                    import torch
-                    assert "IMG_W" in os.environ
-                    w = int(os.environ["IMG_W"])
-                    h = int(os.environ["IMG_H"])
-                    c = args.num_channels
-                    sample = torch.randn(c, w, h, dtype=torch.float16)
-                    target = torch.randint(10, ())
+                    # import torch
+                    # assert "IMG_W" in os.environ
+                    # w = int(os.environ["IMG_W"])
+                    # h = int(os.environ["IMG_H"])
+                    # c = args.num_channels
+                    # sample = torch.randn(c, w, h, dtype=torch.float16)
+                    # target = torch.randint(10, ())
 
-                    if "DATA_PATH_LOG" in os.environ:
-                        with open(os.environ["DATA_PATH_LOG"], "a") as file:
-                            file.write("#" * 30 + "\n")
-                            file.write(sample + '\n')
-                            file.write(target + '\n')
-                            file.flush()
-
+                    # if "DATA_PATH_LOG" in os.environ:
+                    #     with open(os.environ["DATA_PATH_LOG"], "a") as file:
+                    #         file.write("#" * 30 + "\n")
+                    #         file.write(sample + '\n')
+                    #         file.write(target + '\n')
+                    #         file.flush()
+                    print(f"TOY called here. ")
+                    pass
                 else:
                     path, target = self.samples[curr_index]
                     sample = self.loader(path)
 
-                    if "DATA_PATH_LOG" in os.environ:
-                        with open(os.environ["DATA_PATH_LOG"], "a") as file:
-                            file.write(path + '\n')
-                            file.flush()
+                    # if "DATA_PATH_LOG" in os.environ:
+                    #     from megatron.core import parallel_state as mpu
+                    #     dp_world_size = mpu.get_data_parallel_world_size()
+                    #     dp_group = mpu.get_data_parallel_group()
+                    #     dp_rank = mpu.get_data_parallel_rank()
+
+                    #     import torch.distributed as dist
+                    #     for i in range(dp_world_size):
+                    #         if dp_rank == i:
+                    #             with open(os.environ["DATA_PATH_LOG"], "a") as file:
+                    #                 file.write(path + '\n')
+                    #                 file.flush()
+                    #             dist.barrier(group=dp_group)
                 break
             except Exception as e:
                 curr_index = np.random.randint(0, self.total)

@@ -82,6 +82,7 @@ CLASSIFIER_ARGS="
      --retro-encoder-attention-dropout 0.0 \
      --retro-encoder-hidden-dropout 0.0 \
 "
+     # --dataloader-type single \
 
 if [ -n "$unifiedSP" ]; then
      CLASSIFIER_ARGS="--use_unifiedSP $CLASSIFIER_ARGS"
@@ -94,6 +95,7 @@ fi
 if [ -n "$NUM_CHANNELS" ]; then
      CLASSIFIER_ARGS="--num-channels $NUM_CHANNELS"
 fi
+
 
 DATA_ARGS="
      --tokenizer-type NullTokenizer \

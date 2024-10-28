@@ -44,7 +44,7 @@ def model_provider(pre_process=True, post_process=True):
     #                         config_dict_or_path=args.deepspeed_config_dict,
     #                         enabled=args.zero_stage == 3,
     #                         mpu=mpu):
-        ##TODO: enable PP here. 
+    ##TODO: enable PP here?
     if args.vision_backbone_type == 'vit':
         print_rank_0("building VIT model ...")
         model = VitClassificationModel(config=config,
@@ -80,7 +80,6 @@ def get_batch(data_iterator):
     dp_src_rank = mpu.get_data_parallel_src_rank()
 
     ## Generate Random TOY dataset
-    # raise KeyboardInterrupt()
     if os.environ["DATA"] == "TOY":
         ## 1. First, only rank0 generates the data
         ## 2. rank0 scatters data to other sp_rank=1
@@ -100,37 +99,7 @@ def get_batch(data_iterator):
         img_dtype = torch.float16
         label_dtype = torch.int64
 
-        # img = torch.empty(b // dp, c, h, w, dtype=img_dtype, device=dev)
-        # label = torch.empty(b // dp, dtype=label_dtype, device=dev)
-
-        # if rank == 0:
-        #     ## Generate TOY DATASET on rank0
-        #     num_classes = int(os.environ["NUM_CLASSES"])
-        #     full_img = torch.randn(b, c, h, w, dtype=img_dtype, device=dev) ## B, S
-        #     full_label = torch.randint(num_classes, (b,), dtype=label_dtype, device=dev) ## B, S
-
-        #     img_list = [full_img[MBS*i: MBS*i + MBS]for i in range(dp)]
-        #     label_list = [full_label[MBS*i: MBS*i + MBS]for i in range(dp)]
-
-        #     # ## Logging Full TOY data
-        #     # with open(os.environ["TOY_DATALOG"], mode='a') as file:
-        #     #     file.write(f"img: {str(full_img)}\n")
-        #     #     file.write(f"label: {str(full_label)}\n")
-        # else:
-        #     img_list = None
-        #     label_list = None
-
-        # if dp_src_rank == 0: ## only communicate within the first dp group
-        #     ## Distribute TOY DATASET across DP src ranks
-        #     dist.scatter(img, img_list, src=0, group=dp_group)
-        #     dist.scatter(label, label_list, src=0, group=dp_group)
-
-        #     data_dict = {"image": img, "label": label}
-        # else:
-        #     data_dict = None
-        # dist.barrier() ## Q. useless? 
-
-        if dp_src_rank == 0: ## only communicate within the first dp group
+        if dp_src_rank == 0: ## only need data in first dp group as it will get broadcasted to other dp group. 
             ## Generate TOY DATASET on rank0
             num_classes = int(os.environ["NUM_CLASSES"])
             full_img = torch.randn(b, c, h, w, dtype=img_dtype, device=dev) ## B, S
@@ -144,6 +113,7 @@ def get_batch(data_iterator):
             data_dict = None
     else:
         # Broadcast data.
+        ## TODO: Everyone tries to read data? 
         if data_iterator is not None:
             data = next(data_iterator)
             data_dict = {}
@@ -154,16 +124,10 @@ def get_batch(data_iterator):
 
     ## Log data (only from the first dp group)
     if "DATA_PATH_LOG" in os.environ and dp_src_rank == 0:
-        # TODO: make the print of data ordered by rank
-        # print(f"rank: {rank}")
-        # print(f"dp_src_rank: {dp_src_rank}")
-        # print(f"dp_group2: {dp_group}")
-        # dist.barrier(group=dp_group) ## communicate only within the first group.
-        # raise KeyboardInterrupt()
-    
         with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
             file.write(f"img: {data_dict['image']}\n")
             file.write(f"label: {data_dict['label']}\n")
+            # TODO: make the print of data ordered by rank
             # for i in range(dp):
             #     if rank == i:
             #         file.write(f"img: {data_dict['image']}\n")
@@ -179,47 +143,27 @@ def get_batch(data_iterator):
     return images, labels
 
 def loss_func(labels, output_tensor):
-    # def gather_last_dim_from_sequence_parallel_region(input_, tensor_parallel_output_grad=True):
-    #     return _GatherFromSequenceParallelRegion.apply(input_, tensor_parallel_output_grad)
-
     sp_rank = mpu.get_sequence_parallel_rank()
     sp_world_size = mpu.get_sequence_parallel_world_size()
-    # # print(f"sp_rank: {mpu.get_sequence_parallel_rank()}")
-    # logits = output_tensor.contiguous().float()
-    # # print(f"logits: {logits}")
-    # args = get_args()
-    # labels = F.one_hot(labels, num_classes=args.num_classes)
-    # labels = labels.unsqueeze(0)
-    # output_tensor = output_tensor.unsqueeze(0)
-    # output_tensor = output_tensor.T.unsqueeze(-1) ## TODO: is .T as efficient as .transpose?
 
-    # if mpu.get_sequence_parallel_rank() == 0:
-    # print(f"labels.shape: {labels.shape}")
-    # print(f"output_tensor.shape: {output_tensor.shape}")
-    # if sp_rank > 1:
-    #     dist.broadcast(logits, src=0, group=mpu.get_sequence_parallel_group())
-    # from megatron.core.sequence_parallel import vocab_sequence_parallel_cross_entropy
-    # from megatron.core.tensor_parallel import vocab_parallel_cross_entropy
     logits = output_tensor.contiguous().float()
     if sp_rank == 0:
         logits = output_tensor.contiguous().float()
     else:
         logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
+        ## TODO: Would adding barrier help with saving compute? 
+
     outputs = torch.argmax(logits, -1)
     correct = (outputs == labels).float()
     accuracy = torch.mean(correct)
     if sp_world_size > 1:
-        # if sp_rank == 0:
+        ## TODO: below will be useful for VIT Auto-encoder
         # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
-        loss = F.cross_entropy(logits, labels) #/ sp_world_size ## Currently backwards are called by 4 GPUS (same loss)?
-        # else:
-        #     loss = torch.tensor(0, device=torch.cuda.current_device())
-        #     accuracy = torch.tensor(0, device=torch.cuda.current_device())
+        loss = F.cross_entropy(logits, labels)
     else:
+        ## TODO: Find a way to not do below compute? 
         loss = F.cross_entropy(logits, labels)
     
-    # requires_grad=False
-
     import os
     debug_mode = 'DEBUG_FNAME' in os.environ
     if debug_mode:
@@ -232,85 +176,7 @@ def loss_func(labels, output_tensor):
             # f.write(f"\n[{sp_rank}] output after head shape: {output_tensor.shape}\n")
             f.write(f"\n[{sp_rank}] loss: {loss}\n")
 
-    # if sp_rank==0:
-    #     logits = logits.T
-    #     # torch.distributed.gather(logits, dst=0, group=group)
-    #     # from megatron.core.tensor_parallel import mappings 
-    #     # from megatron.core.tensor_parallel.mappings import gather_from_tensor_model_parallel_region, dummy_function
-    #     from megatron.core.tensor_parallel.mappings import gather_from_sequence_parallel_group
-    #     from megatron.core import tensor_parallel
-    #     # import gather_from_sequence_parallel_group
-    #     logits = tensor_parallel.gather_from_sequence_parallel_group(logits).T.contiguous() ## Gather first dim
-    #     logits = tensor_parallel.gather_from_tensor_model_parallel_region(logits).T.contiguous() ## Gather first dim
-        
-    #     print(f"logits.shape: {logits.shape}")
-    #     print(f"labels.shape: {labels.shape}")
-    #     loss = F.cross_entropy(logits, labels)
-    #     # outputs = torch.argmax(logits, -1)
-    #     # correct = (outputs == labels).float()
-    #     # accuracy = torch.mean(correct)
-    # else:
-    #     loss = torch.empty(1, device=torch.cuda.current_device())
-    #     accuracy = torch.empty(1, device=torch.cuda.current_device())
-    # group = mpu.get_sequence_parallel_group()
-    # dist.barrier(group=group)
-    # # dist.broadcast(loss, src=0, group=group)
-    # # dist.broadcast(accuracy, src=0, group=group)
-
-    # with open(debug_fname, "a") as f:
-    #     f.write(f"[{sp_rank}] Got hung here?\n")
-
-    # with open(debug_fname, "a") as f:
-    #     f.write(f"[{sp_rank}] output after head: {output_tensor}\n")
-
-    # with open(debug_fname, "a") as f:
-    #     f.write(f"[{sp_rank}] real losses_reduced: {loss}\n")
-    # raise KeyboardInterrupt("break")
-
-    # print(f"loss: {loss}")
-    # print(f"loss.shape: {loss.shape}")
-    # print(f"loss.grad_fn: {loss.grad_fn}")
-    # print(f"loss.device: {loss.device}")
-    # print(f"outputs.device: {outputs.device}")
-    # print(f"accuracy.device: {accuracy.device}")
-    # else:
-        # print("yahoo")
-        # loss = torch.empty(1, device=torch.cuda.current_device())
-        # accuracy = torch.empty(1, device=torch.cuda.current_device())
-        # loss = torch.zeros(1, device=torch.cuda.current_device())
-        # accuracy = torch.zeros(1, device=torch.cuda.current_device())
-    # dist.broadcast(loss, src=0, group=mpu.get_sequence_parallel_group())
-    # dist.broadcast(accuracy, src=0, group=mpu.get_sequence_parallel_group())
-    # dist.all_reduce(loss, op=dist.ReduceOp.SUM, group=mpu.get_sequence_parallel_group())
-    # dist.all_reduce(accuracy, op=dist.ReduceOp.SUM, group=mpu.get_sequence_parallel_group())
-
-
-    # print(f"loss: {loss}")
-    # print(f"loss.grad_fn: {loss.grad_fn}")
-    # print(f"loss[0].grad_fn: {loss[0].grad_fn}")
-
-    # raise KeyError("breakdance")
-
-    # comm.Barrier()
-    # print(f"[{sp_rank}] loss: {loss}")
-    # print(f"[{sp_rank}] accuracy: {accuracy}")
-    ## output, logits, loss: [b, ]
-    # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels).mean() ##TODO: implement later for better throughput
-    # print_rank_0(f"output_tensor.shape: {output_tensor.shape}")
-    # print_rank_0(f"logits.shape: {logits.shape}")
-    # print_rank_0(f"labels.shape: {labels.shape}")
-    
-
-    ## TODO: Could only run on 1 of the SP group.
-    # with torch.no_grad():
-    #     gathered_logits = gather_from_sequence_parallel_group(logits)
-    #     outputs = torch.argmax(gathered_logits, -1)
-    #     correct = (outputs == labels).float()
-    #     accuracy = torch.mean(correct)
     averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
-    # averaged_loss = loss, accuracy
-
-    # return loss, {"loss": averaged_loss[0] * sp_world_size, "accuracy": averaged_loss[1] * sp_world_size}
     return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
 
 

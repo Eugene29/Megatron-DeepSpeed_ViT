@@ -403,7 +403,7 @@ class FlashSelfAttention(torch.nn.Module):
             self.flash_attn_func = flash_attn_varlen_func if args.use_flash_attn_v2 else flash_attn_unpadded_func
             self.use_flash_attn = True
 
-    ## Add bathc_dim_idx as it is inputted later on. 
+    ## Q. Slower flash attention. Why is it slower? 
     # def forward(self, q, k, v):
     #     from flash_attn import flash_attn_func
     #     out_ref, _, _ = flash_attn_func(
@@ -618,7 +618,6 @@ class ParallelAttention(MegatronModule):
             local_attn = FlashSelfAttentionTriton(causal=self.causal, attention_dropout=args.attention_dropout)
         elif self.use_flash_attn:
             local_attn = FlashSelfAttention(causal=self.causal, attention_dropout=config.attention_dropout)
-            # local_attn = FlashSelfAttention(causal=True, attention_dropout=config.attention_dropout)
         else:
             local_attn = CoreAttention(self.layer_number, config, self.attn_mask_type)
 
@@ -637,12 +636,10 @@ class ParallelAttention(MegatronModule):
                 else:
                     from yunchang import UlyssesAttention
                     self.dist_attn = UlyssesAttention(local_attn=local_attn, sequence_process_group=sp_pg, use_fa=args.use_flash_attn)
-
             elif args.USP_ring:
                 from yunchang import ring_flash_attn_func
                 ## Just a function 
                 self.dist_attn = ring_flash_attn_func
-            
             elif args.USP_hybrid:
                 ## TODO: add how to pass ring and ulysses degree.
                 # from yunchang import AsyncLongContextAttention ## TODO: Async doesn't have backward implemented yet.
@@ -656,7 +653,6 @@ class ParallelAttention(MegatronModule):
                 set_seq_parallel_pg(sp_ulysses_degree=sp_size, sp_ring_degree=1, rank=rank, world_size=world_size, use_ulysses_low=False)
                 # self.dist_attn = AsyncLongContextAttention(ring_impl_type="basic")
                 self.dist_attn = LongContextAttention(ring_impl_type="basic")
-            
             else:
                 assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
                 assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
@@ -665,7 +661,6 @@ class ParallelAttention(MegatronModule):
                     parallel_state.get_sequence_parallel_group(), ## group that needs to communicate together. (if 1, then it communicates with other devices in 1)
                     gather_idx=1 if args.use_flash_attn_v1 or args.use_flash_attn_v2 else 0) 
                 # flash_attn_cuda assumes [b, s, nh, hd] layout, we need to make sure all2all gathers into the correct sequence dimension.
-
         else:
             if self.use_flash_attn:
                 self.core_attention_flash = local_attn
@@ -961,10 +956,6 @@ class ParallelAttention(MegatronModule):
 
         output, bias = self.dense(context_layer)
 
-        # print(f"context_layer.shape: {context_layer.shape}")
-        # print(f"output.shape: {output.shape}")
-        # print(f"bias.shape: {bias.shape}")
-        # raise KeyboardInterrupt("BReAK")
         return output, bias
 
 
@@ -1362,22 +1353,18 @@ class ParallelTransformerLayer(MegatronModule):
 
         # Layer norm at the beginning of the transformer layer.
         layernorm_output = self.input_layernorm(hidden_states)
-        # layernorm_output = hidden_states
 
         import os
         debug_mode = 'DEBUG_FNAME' in os.environ
         seq_rank = mpu.get_sequence_parallel_rank()
 
         # Self attention.
-        ## TODO: TEST
         attention_output, attention_bias = \
             self.self_attention(
                 layernorm_output,
                 attention_mask,
                 inference_params=inference_params,
                 rotary_pos_emb=rotary_pos_emb)
-        # attention_output = layernorm_output
-        # attention_bias = None
         
         if debug_mode:
             debug_fname = os.environ['DEBUG_FNAME']
@@ -1385,10 +1372,6 @@ class ParallelTransformerLayer(MegatronModule):
                 f.write(f"\n\n\n\n")
                 f.write(f"[{seq_rank}, l={self.layer_number}] Layernorm output: {layernorm_output}\n")
                 f.write(f"[{seq_rank}, l={self.layer_number}] Layernorm output shape: {layernorm_output.shape}\n")
-                # f.write(f"[{seq_rank}, l={self.layer_number}] ATT output: {attention_output}\n")
-                # f.write(f"[{seq_rank}, l={self.layer_number}] ATT output shape: {attention_output.shape}\n")
-                # f.write(f"[{seq_rank}, l={self.layer_number}] ATT Bias: {attention_bias}\n")
-                # f.write(f"[{seq_rank}, l={self.layer_number}] ATT Bias shape: {attention_bias.shape}\n")
 
         # Residual connection.
         if self.apply_residual_connection_post_layernorm:
@@ -1425,7 +1408,6 @@ class ParallelTransformerLayer(MegatronModule):
 
         # Layer norm post the self attention.
         layernorm_output = self.post_attention_layernorm(layernorm_input)
-        # layernorm_output = layernorm_input
 
         # Cross attention.
         if self.layer_type == LayerType.encoder:
@@ -1517,7 +1499,6 @@ class ParallelTransformerLayer(MegatronModule):
                 f.write(f"[{seq_rank}] mlp_bias: {mlp_bias}")
                 f.write(f"[{seq_rank}] mlp_output: {mlp_output}")
                 f.write(f"[{seq_rank}] output: {output}")
-            # raise KeyboardInterrupt("BREKAJRIOA")
 
         if self.layer_type == LayerType.retro_decoder_with_retriever:
             return output, retriever_output, moe_loss
@@ -2191,9 +2172,6 @@ class ParallelTransformer(MegatronModule):
             #     hidden_states = hidden_states.transpose(0, 1).contiguous()
             hidden_states = self.final_layernorm(hidden_states)
         
-        # from megatron import print_rank_0
-        # print_rank_0(f"final hidden state before head: {hidden_states.shape}")
-
         return (hidden_states, *moe_losses)
 
 class LMHeadPipe(MegatronModule):

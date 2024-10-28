@@ -155,7 +155,6 @@ def pretrain(train_valid_test_dataset_provider,
 
     timers = get_timers()
 
-    # raise KeyboardInterrupt()
     if args.deepspeed:
         args.deepspeed_config_dict = _create_ds_config_dict()
         if "curriculum_learning" in args.deepspeed_config_dict and \
@@ -170,18 +169,15 @@ def pretrain(train_valid_test_dataset_provider,
         if "compression_training" in args.deepspeed_config_dict:
             args.compression_training = True
 
-    # raise KeyboardInterrupt()
     # Model, optimizer, and learning rate.
     timers('model-and-optimizer-setup', log_level=0).start(barrier=True)
     model, optimizer, opt_param_scheduler = setup_model_and_optimizer(
         model_provider, model_type, teacher=False, data_post_process=data_post_process,
         build_train_valid_test_datasets_provider=train_valid_test_dataset_provider)
-    # raise KeyboardInterrupt()
     timers('model-and-optimizer-setup').stop()
     print_datetime('after model, optimizer, and learning rate '
                    'scheduler are built')
 
-    # raise KeyboardInterrupt()
     # Data stuff.
     timers('train/valid/test-data-iterators-setup', log_level=0).start(
         barrier=True)
@@ -539,7 +535,6 @@ def setup_model_and_optimizer(model_provider_func,
 
     model = get_model(model_provider_func, model_type)
 
-    # raise KeyboardInterrupt()
     # initialize the compression here
     student_global_steps = 0
     if args.kd or args.mos:
@@ -638,7 +633,6 @@ def setup_model_and_optimizer(model_provider_func,
             assert model.grid.get_data_parallel_rank() == mpu.get_data_parallel_rank()
         model = [model]
 
-    # raise KeyboardInterrupt()
     # Compression has its own checkpoint loading path (e.g, loading both teacher and student models). So if compression is enabled, we skip the following checkpoint loading.
     no_post_init_checkpoint_loading = args.kd or args.mos
     if not no_post_init_checkpoint_loading:
@@ -653,7 +647,6 @@ def setup_model_and_optimizer(model_provider_func,
     else:
         model[0].global_steps = student_global_steps
 
-    # raise KeyboardInterrupt()
     # We only support local DDP with multiple micro-batches.
     if len(model) > 1 or mpu.get_pipeline_model_parallel_world_size() > 1:
         assert args.DDP_impl == 'local'
@@ -720,16 +713,7 @@ def train_step(forward_step_func, data_iterator,
     
     import os
     debug_mode = 'DEBUG_FNAME' in os.environ
-    import megatron.core.parallel_state as mpu
-    seq_rank = mpu.get_sequence_parallel_rank()
-    
-    # global count
-    # global threshold
 
-    # if debug_fname == "None":
-    # count+=1
-    # print(f"count: {count}")
-    # if debug_mode and count < threshold:
     if not debug_mode:
         losses_reduced = forward_backward_func(
             forward_step_func=forward_step_func,
@@ -741,7 +725,9 @@ def train_step(forward_step_func, data_iterator,
             decoder_seq_length=args.decoder_seq_length,
             forward_only=False)
     else:
-        # model[0].eval()
+        import megatron.core.parallel_state as mpu
+        seq_rank = mpu.get_sequence_parallel_rank()
+
         torch.manual_seed(33333)
         bs = 16
         w_and_h = int(os.environ["IMG_W"])
@@ -756,12 +742,6 @@ def train_step(forward_step_func, data_iterator,
             decoder_seq_length=args.decoder_seq_length,
             forward_only=False)
 
-        # input_tensor = torch.randn(32, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device())
-        # output = model[0](input_tensor)
-        #     with open(debug_fname, "a") as f:
-        #         f.write(f"[{seq_rank}] output: {output}\n")
-
-        ## TODO: maybe the other ranks have different gradients when you used vocab_parallel?
         outputs, gradients, before_weights, after_weights = [], [], [], []
         debug_fname = os.environ['DEBUG_FNAME']
         with open(debug_fname, "a") as f:
@@ -818,7 +798,6 @@ def train_step(forward_step_func, data_iterator,
 
     ## print gradient(make sure they are emptied and updated)
     ## check the updated weights (should be identical to DP)
-    # if debug_fname != "None" and count == threshold:
     if debug_mode:
         with open(debug_fname, "a") as f:
             f.write(f"\n\n\n\n-------------------------------------------\n[{seq_rank}] Gradients after step:")
@@ -829,7 +808,6 @@ def train_step(forward_step_func, data_iterator,
             max_memory = torch.cuda.max_memory_allocated()
             f.write(f"\nmax_memory: {max_memory / (1024 ** 3)}")
         
-        # torch.save([gradients, before_weights, after_weights], debug_fname + '.pt')
         raise KeyboardInterrupt("Ran one batch of toy-dataset")
 
     # Gather params.
@@ -1331,38 +1309,38 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         assert model[0].random_ltd_enabled()
         args.random_ltd_layer_num = model[0].random_ltd_scheduler.get_random_ltd_layer_num()
         
-    def trace_handler(p):
-        # output = p.key_averages().table(sort_by="self_cuda_time_total", row_limit=10)
-        log_dir = "./trace_vit/"
-        os.makedirs(log_dir, exist_ok=True)
-        rank = torch.cuda.current_device()
-        WS = torch.distributed.get_world_size()
-        FA = 'FA_' if 'FA' in os.environ else ""
-        SP = "SP" + os.environ["SP"] + "_"
-        DATA = os.environ["DATA"]
-        if "USP_ulysses" in os.environ:
-            framework = "USP_ulysses"
-        elif "USP_ring" in os.environ:
-            framework = "USP_ring"
-        elif "USP_hybrid" in os.environ:
-            framework = "USP_hybrid"
-        else:
-            framework = "DS"
-        
-        if "PACKED" in os.environ:
-            if os.environ["PACKED"] == "5D":
-                packed = "packed5D_"
-            else:
-                packed = "packed_"
-        else:
-            packed = ""
-
-        if torch.distributed.get_rank() == 0:
-            p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
-
     import os
     profile_enabled = "PROFILE" in os.environ
     if profile_enabled:
+        def trace_handler(p):
+            # output = p.key_averages().table(sort_by="self_cuda_time_total", row_limit=10)
+            log_dir = "./trace_vit/"
+            os.makedirs(log_dir, exist_ok=True)
+            rank = torch.cuda.current_device()
+            WS = torch.distributed.get_world_size()
+            FA = 'FA_' if 'FA' in os.environ else ""
+            SP = "SP" + os.environ["SP"] + "_"
+            DATA = os.environ["DATA"]
+            if "USP_ulysses" in os.environ:
+                framework = "USP_ulysses"
+            elif "USP_ring" in os.environ:
+                framework = "USP_ring"
+            elif "USP_hybrid" in os.environ:
+                framework = "USP_hybrid"
+            else:
+                framework = "DS"
+            
+            if "PACKED" in os.environ:
+                if os.environ["PACKED"] == "5D":
+                    packed = "packed5D_"
+                else:
+                    packed = "packed_"
+            else:
+                packed = ""
+
+            if torch.distributed.get_rank() == 0:
+                p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
+
         print_rank_0(f"PROFILING...")
         p = torch.profiler.profile(
             schedule=torch.profiler.schedule(wait=5, warmup=2, active=2),
@@ -1427,11 +1405,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
     if args.rank == 0:
         from torchinfo import summary
         summary(model[0])
-        # model[0]
 
-    # from deepspeed.profiling.flops_profiler import FlopsProfiler
-    # prof = FlopsProfiler(model[0])
-    # prof.start_profile()
     while iteration < args.train_iters and (args.train_tokens is None or \
         args.consumed_train_tokens < args.train_tokens):
         strt = time.time()
@@ -1445,7 +1419,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             model[0].set_train_batch_size(global_batch_size)
             tot_Tflops = num_floating_point_operations(args=args, batch_size=global_batch_size) / 1000 ** 4
             llm_tot_Tflops = llm_num_floating_point_operations(args=args, batch_size=global_batch_size) / 1000**4
-            # print(f"Megatron-LM formula? tot_Tflops: {tot_Tflops}")
 
         ## Check all code updates and clean then up. 
         if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
@@ -1481,11 +1454,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     opt_param_scheduler,
                     config)
         
-        # model_agnostic_DS_flop_count = prof.get_total_flops()
-        # if torch.distributed.get_rank() == 0:
-        #     print(f"DS tflop count: {model_agnostic_DS_flop_count // 10**12}")
-        # prof.reset_profile()
-
         iteration += 1
         args.iteration = iteration
         new_samples = mpu.get_data_parallel_world_size() * \
@@ -1600,6 +1568,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         step_time = time.time() - strt
         max_memory_used = torch.cuda.max_memory_allocated() / (1024**3)
+        ## TODO: Why is it that we cannot get close to 40 GB of memory usage? 
         # dev = deepspeed.accelerator.get_accelerator().current_device()
         # memory_tensor = torch.tensor(max_memory_used, device=dev)
         # print(f"memory_tensor: {memory_tensor}")

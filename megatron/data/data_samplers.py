@@ -85,18 +85,10 @@ class MegatronPretrainingSampler:
     def __iter__(self):
         batch = []
         # Last batch will be dropped if drop_last is not set False
-        # fname = "data_samplers_DP.log"
-        # with open(fname, mode="w") as file:
-        #     pass
-
         for idx in range(self.consumed_samples, self.total_samples):
             batch.append(idx)
             if len(batch) == self.micro_batch_times_data_parallel_size:
-                # with open(fname, mode="a") as file:
-                #     file.write()
                 start_idx, end_idx = self.get_start_end_idx()
-                # print(f"batch: {batch}")
-                # print(f"batch_idx: {batch[start_idx:end_idx]}")
                 yield batch[start_idx:end_idx]
                 batch = []
 
@@ -113,7 +105,6 @@ class RandomSeedDataset(Dataset):
         self.base_seed = args.seed
         self.curr_seed = args.seed
         self.dataset = dataset
-        # print(f"len(self.dataset): {len(self.dataset)}")
 
     def __len__(self):
         return len(self.dataset)
@@ -198,28 +189,12 @@ class MegatronPretrainingRandomSampler:
             idx_range = idx_range_active[self.data_parallel_rank::self.data_parallel_size]
 
         ## Q. What is torch.randperm doing?
-            ## randperm here creates a iterator that produces indices. This order stays constant if the bucket_size is the same. 
+        ## > randperm here creates a iterator that produces indices. This order stays constant if the bucket_size is the same. 
         ## Q. is current_epoch_samples constant at least for VIT?
-            ## Should be if your not checkpointing. 
-        ## Q. map out the data fetching process for VIT
-            ## 
-        ## Q. Does single produce same data generator? If so, we don't need test script then? 
-        
-        # print(f"dataset: {self.dataset}")
-        # print(f"total_samples: {self.total_samples}")
-        # print(f"consumed_samples: {self.consumed_samples}")
-        # print(f"micro_batch_size: {self.micro_batch_size}")
-        # print(f"data_parallel_rank: {self.data_parallel_rank}")
-        # print(f"data_parallel_size: {self.data_parallel_size}")
-        # print(f"data_sharding: {self.data_sharding}")
-        # print(f"This part is initialized twice for some reason?")
-        # print(f"dataset size: {len(idx_range)}")
-        # print(f"full_bucket_size: {full_bucket_size}")
-        # print(f"full_bucket_offset: {full_bucket_offset}")
-        # print(f"epoch: {self.epoch}")
-        # print(f"idx_range: {idx_range}")
-        ## NOTE: There is a difference in idx_range
-        # breakpoint()
+        ## > Should be if your not checkpointing. 
+        ## NOTE: If MBS is different then full_bucket_size will be different. 
+        ## This means that idx_range or your data file order will also be different.
+        ## You can avoid the difference in data file order through drop_last_batch_with_GBS
 
         batch = []
         # Last batch if not complete will be dropped.

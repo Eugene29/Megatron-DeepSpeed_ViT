@@ -35,34 +35,27 @@ class VitMlpHead(MegatronModule):
     """
 
     def __init__(self, hidden_size, num_classes, config):
-        # from megatron.core.tensor_parallel import ColumnParallelLinear
         super(VitMlpHead, self).__init__()
-        # self.dense_in = torch.nn.Linear(hidden_size, hidden_size)
-        ## TODO: Is this agnostic of parallelism?
-        # print(f"self.config: {config}")
-        # print(f"self.config.init_method: {config.init_method}")
-        # self.relu = torch.nn.ReLU()
         self.dense_in = torch.nn.Linear(hidden_size, hidden_size)
         self.dense_out = torch.nn.Linear(hidden_size, num_classes)
+        torch.nn.init.constant_(self.dense_out.bias, -10)
+
+        ## TODO: Enable TP (But below might be useless if VIT is not an autoencoder)
+        # from megatron.core.tensor_parallel import ColumnParallelLinear
         # self.dense_in = ColumnParallelLinear(hidden_size, hidden_size, config=config, init_method=config.init_method, gather_output=True, forSP=True)
         # self.dense_out = ColumnParallelLinear(hidden_size, num_classes, config=config, init_method=config.init_method, gather_output=False, forSP=True)
-        torch.nn.init.constant_(self.dense_out.bias, -10)
 
     def forward(self, hidden_states):
         # hidden_states: [b, 1, h]
         # sequence_index: index of the token to pool.
-        # dense_in_result, _ = self.dense_in(hidden_states) ## TODO: Isn't a combination of Row and Column Parallel Linear better?
-        dense_in_result = self.dense_in(hidden_states) ## TODO: Isn't a combination of Row and Column Parallel Linear better? 
-        tanh_result = torch.tanh(dense_in_result) ## wtf, tanh is called instead of relu.
-        # dense_out_result, _ = self.dense_out(tanh_result)
+        dense_in_result = self.dense_in(hidden_states)
+        tanh_result = torch.tanh(dense_in_result)
         dense_out_result = self.dense_out(tanh_result)
 
-        # import os
-        # debug_fname = os.environ["DEBUG_FNAME"]
-        # if debug_fname != "None":
-        #     seq_rank = mpu.get_sequence_parallel_rank()
-        #     with open(debug_fname, "a") as f:
-        #         f.write(f"[{seq_rank}] output after head (from vit_backbone.py): {dense_out_result}\n")
+        ## TODO: Enable TP (But below might be useless if VIT is not an autoencoder)
+        # dense_in_result, _ = self.dense_in(hidden_states)
+        # dense_out_result, _ = self.dense_out(tanh_result)
+
         return dense_out_result
 
 
@@ -208,9 +201,9 @@ class VitBackbone(MegatronModule):
             )
 
             # embedding
-            self.pos_encoding = args.pos_encoding ## TODO: pass it as init argument or as config
+            self.pos_encoding = args.pos_encoding
             if self.pos_encoding:
-                ## TODO: Understanding the theroy behind pos encoding and optimize it for longer sequences. 
+                ## TODO: Understanding the arguments behind pos encoding and optimize it for longer sequences. 
                 def positionalencoding1d(d_model, length, dev):
                     """
                     :param d_model: dimension of the model
@@ -230,7 +223,7 @@ class VitBackbone(MegatronModule):
                     return pe
 
                 from deepspeed.accelerator import get_accelerator
-                dev = get_accelerator().current_device() ## NOTE: although rank are unique, ranging from 0~num_devices, device names can be the same across nodes. 
+                dev = get_accelerator().current_device() ## NOTE: although rank are unique and range from 0~num_devices, device names should be across nodes. 
                 pos_encoding = positionalencoding1d(self.hidden_size, self.seq_length, dev)
 
                 sp = mpu.get_sequence_parallel_world_size()
@@ -256,7 +249,7 @@ class VitBackbone(MegatronModule):
                 )
 
             self.embedding_dropout = torch.nn.Dropout(args.hidden_dropout)
-            # # Dropout.
+            # Dropout.
             # if self.sequence_parallel:
             #     # already partition sequence, do not need scatter_to_sequence_parallel_region
             #     # embeddings = tensor_parallel.scatter_to_sequence_parallel_region(embeddings)
@@ -280,20 +273,6 @@ class VitBackbone(MegatronModule):
         self.transformer.set_input_tensor(input_tensor)
 
     def forward(self, input):
-        # if "DATA_PATH_LOG" in os.environ:
-        #     from megatron.core import parallel_state as mpu
-        #     dp_world_size = mpu.get_data_parallel_world_size()
-        #     dp_group = mpu.get_data_parallel_group()
-        #     dp_rank = mpu.get_data_parallel_rank()
-
-        #     import torch.distributed as dist
-        #     with open(os.environ["DATA_PATH_LOG"], "a") as file:
-        #         for i in range(dp_world_size):
-        #             if dp_rank == i:
-        #                 file.write(str(input) + '\n')
-        #                 file.flush()
-        #             dist.barrier(group=dp_group)
-
         if self.pre_process:
             rearranged_input = einops.rearrange(
                 input,
@@ -306,13 +285,15 @@ class VitBackbone(MegatronModule):
                 sp = mpu.get_sequence_parallel_world_size()
                 sp_rank = mpu.get_sequence_parallel_rank()
                 
-                ##TODO: Enable undivisible SP? i.e. automatic token padding to enable SP. 
+                ##TODO: Support undivisible SP? i.e. automatic token padding to enable SP. 
                 sub_seq_length = self.seq_length // sp
                 sub_seq_start = sp_rank * sub_seq_length
                 sub_seq_end = (sp_rank + 1) * sub_seq_length
 
                 rearranged_input = rearranged_input[:, sub_seq_start:sub_seq_end, :] ## b, s, h
-                
+                ## Q. Don't we need to use sequence_data_parallel instead of sequence_parallel_rank?
+                ## > No, sequence_data_parallel_rank is the rank that is unique across both sp and dp groups. 
+
             assert rearranged_input.dtype == torch.half
             encoder_output = self.linear_encoder(rearranged_input)
 
@@ -325,29 +306,12 @@ class VitBackbone(MegatronModule):
             if self.pos_encoding:
                 token_embeddings = concatenated_tokens + self.position_embeddings
             else:
-                ## TODO: Include clf token in pos encoding while both parallelizing sequence and pos embedding. 
+                ## TODO: When supporting undivisible SP, include clf token in pos encoding while both parallelizing sequence and pos embedding. 
                 token_embeddings = concatenated_tokens + \
                         self.position_embeddings(self.position_ids[:, :concatenated_tokens.shape[1]])
             
             hidden_states = token_embeddings.transpose(0, 1).contiguous() # [b, s, h] => [s, b, h]
-
-            ## Q. Don't we need to use sequence_data_parallel instead of sequence_parallel_rank? However, sequence_data_parallel is just ddp? 
-            ## No, sequence_data_parallel rank is the rank that is unique across both sp and dp groups. 
             
-            ## Previous code: 
-            # args = get_args()
-            # print(f"args.rank: {args.rank}, hidden_states (before chunking): {hidden_states.shape}")
-            # print(F"hidden_states.shape: {hidden_states.shape}")
-            # if self.ds_sequence_parallel:
-            #     sp = mpu.get_sequence_parallel_world_size()
-            #     sp_rank = mpu.get_sequence_parallel_rank()
-                
-            #     assert self.seq_length % sp == 0
-            #     ## This should terminate it, and if you want more seq_length...
-            #     sub_seq_length = self.seq_length // sp
-            #     sub_seq_start = sp_rank * sub_seq_length
-            #     sub_seq_end = (sp_rank + 1) * sub_seq_length
-            #     hidden_states = hidden_states[sub_seq_start:sub_seq_end, :, :] ## s, b, h
             hidden_states = self.embedding_dropout(hidden_states) 
         else:
             hidden_states = input
@@ -361,49 +325,10 @@ class VitBackbone(MegatronModule):
 
         hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
 
-        # print(f"hidden_states b: {hidden_states.shape}")
-        # if self.ds_sequence_parallel:
-        #     from megatron.core import tensor_parallel 
-        #     hidden_states = tensor_parallel.gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
-        # print(f"hidden_states a: {hidden_states.shape}")
-        # import os
-        # debug_fname = os.environ['DEBUG_FNAME']
-        # with open(debug_fname, "a") as f:
-        #     if self.ds_sequence_parallel:
-        #         # if sp_rank == 0:
-        #             ## just the first block
-        #         f.write(f"sp_rank: {sp_rank}\n")
-        #         # f.write(f"first hidden_state: {gather_from_sequence_parallel_group(hidden_states)}\n")
-        #         # f.write(f"first hidden_state shape: {gather_from_sequence_dparallel_group(hidden_states).shape}\n")
-        #         f.write(f"(after transformer) hidden_state: {hidden_states}\n")
-        #         f.write(f"(after transformer) hidden_state shape: {hidden_states.shape}\n")
-        #     else:
-        #         dp_rank = mpu.get_data_parallel_rank()
-        #         f.write(f"dp_parallel_world_rank: {dp_rank}\n")
-        #         f.write(f"(after transformer) hidden_state: {hidden_states}\n")
-        #         f.write(f"(after transformer) hidden_state shape: {hidden_states.shape}\n")
-
-        ##NOTE: This seems like a pointless thing to do because you are going to extract the first token only anyway.
-        # from megatron.core import tensor_parallel
-        # args = get_args()
-        # print(f"before rank: {args.rank}, hidden_states.shape: {hidden_states.shape}")
-        # if self.ds_sequence_parallel:
-        #     hidden_states = gather_from_sequence_parallel_group(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
-        # print(f"after rank: {args.rank}, {hidden_states.shape}")
-        # hidden_states = tensor_parallel.gather_from_sequence_parallel_region(hidden_states) ## gather across seq dim (n/sp, b, h) -> (n, b, h)
-        # torch.distributed.breakpoint()
-        # print(f"mpu.get_sequence_parallel_rank: {mpu.get_sequence_parallel_rank}")
-        
-        ## only extract the clf token in the end.
-        # if mpu.get_sequence_parallel_rank != 0:
-        #     return None
-        
-        # print(f"hidden_states before post_process: {hidden_states.shape}")
         if self.post_process:
             # [s b h] => [b s h]
             if self.single_token_output:
                 hidden_states = hidden_states[0]
-                ## TODO: Let's use global mean pooling instead due to token length not matching up.
             else:
                 if "GLOBAL_MEAN_POOLING" in os.environ:
                     print(f"hidden_states: {hidden_states.shape}")
@@ -413,56 +338,9 @@ class VitBackbone(MegatronModule):
                     ## if not single token, then output the entire embedding. 
                     hidden_states = hidden_states.transpose(0, 1).contiguous()
 
-        # args = get_args()
-        # if args.use_unifiedSP:
-        #     hidden_states
-
-        ## Before head layer, parallelize across hidden dimension.
-        # if self.ds_sequence_parallel:
-        #     ## round to the src rank
-        #     ## TODO: replace this with get data parallel source rank? 
-        #     world_rank = mpu.get_sequence_data_parallel_rank()
-        #     remainder = world_rank % sp
-        #     seq_src_rank = world_rank - remainder 
-        #     with torch.no_grad():
-        #         torch.distributed.broadcast(hidden_states, src=seq_src_rank, group=mpu.get_sequence_parallel_group()) ## TODO: Remove this if you are using global mean pool instead of clf token. I think
-    
-        ## this cuts of other SP rank's graident except for the main one??, which is inoptimal but will do for now. 
-        # print(f"hidden_states.shape: {hidden_states.shape}")
-        # raise KeyboardInterrupt("break")
-
-        # torch.distributed.broadcast(hidden_states, src=3, group=mpu.get_sequence_parallel_group())
-        # if self.ds_sequence_parallel:
-        #     sub_hidden_size = self.hidden_size // sp
-        #     sub_hid_start = sp_rank * sub_hidden_size
-        #     sub_hid_end = (sp_rank + 1) * sub_hidden_size
-        #     hidden_states = hidden_states[:, sub_hid_start:sub_hid_end] ## b, h/SP
-
         if debug_mode:
             with open(debug_fname, "a") as f:
                 f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head: {hidden_states}\n")
                 f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head shape: {hidden_states.shape}\n")
 
-        # if "DATA_PATH_LOG" in os.environ:
-        #     dp_world_size = mpu.get_data_parallel_world_size()
-        #     dp_group = mpu.get_data_parallel_group()
-        #     dp_rank = mpu.get_data_parallel_rank()
-        #     mp_world_size = 
-
-        #     import torch.distributed as dist
-        #     with open(os.environ["DATA_PATH_LOG"], "a") as file:
-        #         for i in range(dp_world_size):
-        #             # if dp_rank == i:
-        #             if rank // == i:
-        #                 file.write("output (before head MLP): " + str(hidden_states) + '\n')
-        #                 file.flush()
-        #             dist.barrier(group=dp_group)
-
         return hidden_states
-    
-
-
-
-# >>> DP = torch.load("/home/eku/polaris/Megatron-DeepSpeed_ViT/debug/output_DP.txt.pt")
-# >>> SP = torch.load("/home/eku/polaris/Megatron-DeepSpeed_ViT/debug/output_SP.txt.pt")
-# >>> torch.sum((DP - SP).abs(), dim=-1)

@@ -216,54 +216,13 @@ class DatasetFolder(VisionDataset):
         Returns:
             tuple: (sample, target) where target is class_index of the target class.
         """
-
-        ## My version. NOTE: This function is not called when DATA=TOY
-        # try:
-        #     path, target = self.samples[index]
-        #     sample = self.loader(path)
-        # except Exception as e:
-        #     print(f"Exception {e} was called")
-
-
-        ## TODO: Q. why are we doing this self.total number of times for each img? 
+        ## NOTE: the for loop and break here ensures that we can draw a data sample. 
         curr_index = index
         for x in range(self.total):
             try:
-                if os.environ["DATA"] == "TOY":
-                    #### Toy Dataset ####
-                    # import torch
-                    # assert "IMG_W" in os.environ
-                    # w = int(os.environ["IMG_W"])
-                    # h = int(os.environ["IMG_H"])
-                    # c = args.num_channels
-                    # sample = torch.randn(c, w, h, dtype=torch.float16)
-                    # target = torch.randint(10, ())
-
-                    # if "DATA_PATH_LOG" in os.environ:
-                    #     with open(os.environ["DATA_PATH_LOG"], "a") as file:
-                    #         file.write("#" * 30 + "\n")
-                    #         file.write(sample + '\n')
-                    #         file.write(target + '\n')
-                    #         file.flush()
-                    print(f"TOY is somehow called here?")
-                    pass
-                else:
+                if not os.environ["DATA"] == "TOY":
                     path, target = self.samples[curr_index]
                     sample = self.loader(path)
-
-                    # if "DATA_PATH_LOG" in os.environ:
-                    #     from megatron.core import parallel_state as mpu
-                    #     dp_world_size = mpu.get_data_parallel_world_size()
-                    #     dp_group = mpu.get_data_parallel_group()
-                    #     dp_rank = mpu.get_data_parallel_rank()
-
-                    #     import torch.distributed as dist
-                    #     for i in range(dp_world_size):
-                    #         if dp_rank == i:
-                    #             with open(os.environ["DATA_PATH_LOG"], "a") as file:
-                    #                 file.write(path + '\n')
-                    #                 file.flush()
-                    #             dist.barrier(group=dp_group)
                 break
             except Exception as e:
                 curr_index = np.random.randint(0, self.total)

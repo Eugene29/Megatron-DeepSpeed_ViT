@@ -178,7 +178,7 @@ elif [[ $DATA == 'TOY' ]]; then
     NLAYERS=24
     HSIZE=1024
     FFN_HSIZE=4096
-    NUM_HEADS=16
+    NUM_HEADS=32
 
     # NLAYERS=30
     # HSIZE=2048

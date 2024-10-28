@@ -245,7 +245,7 @@ class DatasetFolder(VisionDataset):
                     #         file.write(sample + '\n')
                     #         file.write(target + '\n')
                     #         file.flush()
-                    print(f"TOY called here. ")
+                    print(f"TOY is somehow called here?")
                     pass
                 else:
                     path, target = self.samples[curr_index]

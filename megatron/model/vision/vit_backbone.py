@@ -187,6 +187,12 @@ class VitBackbone(MegatronModule):
         self.input_tensor = None
         self.position_ids = None
 
+        if self.ds_sequence_parallel:
+            sp = mpu.get_sequence_parallel_world_size()
+            assert self.seq_length % sp == 0
+            assert args.num_attention_heads % sp == 0, "Num head is the max sp degree for Ulysses"
+
+
         if self.pre_process:
             # cls_token
             if self.class_token:
@@ -300,8 +306,6 @@ class VitBackbone(MegatronModule):
                 sp = mpu.get_sequence_parallel_world_size()
                 sp_rank = mpu.get_sequence_parallel_rank()
                 
-                assert self.seq_length % sp == 0
-
                 ##TODO: Enable undivisible SP? i.e. automatic token padding to enable SP. 
                 sub_seq_length = self.seq_length // sp
                 sub_seq_start = sp_rank * sub_seq_length

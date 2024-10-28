@@ -1600,13 +1600,19 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         step_time = time.time() - strt
         max_memory_used = torch.cuda.max_memory_allocated() / (1024**3)
+        # dev = deepspeed.accelerator.get_accelerator().current_device()
+        # memory_tensor = torch.tensor(max_memory_used, device=dev)
+        # print(f"memory_tensor: {memory_tensor}")
+        # dist.all_reduce(memory_tensor, op=dist.ReduceOp.MAX)
+        memory_tensor = max_memory_used
+
         samples_per_sec = global_batch_size / step_time
         print_rank_0(f"iteration:{iteration} \t"
                         f"time:{step_time:.2f} \t"
                         f"LLM_TFLOPS:{llm_tot_Tflops / step_time:.2f} \t"
                         f"TFLOPS:{tot_Tflops / step_time:.2f} \t"
                         f"Samples/Sec:{samples_per_sec:.2f} \t"
-                        f"Max_memory:{max_memory_used:.2f}" )
+                        f"Max_memory:{memory_tensor:.2f}" )
 
     if profile_enabled:
         p.stop()

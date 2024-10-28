@@ -93,10 +93,10 @@ export WANDB_MODE=disabled
 # export drop_last_batch_with_GBS=1 ## fixes the data order due to different MBS
 # export DATA=TOY; export factor=297 ## max for 1 GPU
 # export DATA=TOY; export factor=288- ## max for 
-export DATA=TOY; export factor=480 ## max for 
-export GBS=1
+# export DATA=TOY; export factor=480 ## max for 
+# export GBS=256
 # export PROFILE=1
-SP=4   SIZE=4 NUM_ITERS=10 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+
 # SP=1   SIZE=1 NUM_ITERS=1 FA=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP1.log bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 # SP=1   SIZE=2 NUM_ITERS=30 FA=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP2.log bash $PYSCRIPT |& tee $LOGDIR/mds2.log
 # SP=1   SIZE=4 NUM_ITERS=30 FA=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP4.log bash $PYSCRIPT |& tee $LOGDIR/mds3.log
@@ -106,11 +106,32 @@ SP=4   SIZE=4 NUM_ITERS=10 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds
 # SP=4   NUM_ITERS=15 FA=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_SP4.log bash $PYSCRIPT |& tee $LOGDIR/mds3.log
 # SP=8   NUM_ITERS=15 FA=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_SP8.log bash $PYSCRIPT |& tee $LOGDIR/mds4.log
 
-## 4. enhance SP
-
 ## Toy Dataset
-# export DATA=TOY
+export DATA=TOY; export factor=240 #480
+# export PROFILE=1
+
+export GBS=$((4 * 8))
+# FA=1 SP=1    POS_ENCODING=1  DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP16.log    NUM_ITERS=2 USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds5.log
+FA=1 SP=4    POS_ENCODING=1  DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP4SP4.log  NUM_ITERS=2 USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
+
+# FA=1 SP=$GBS POS_ENCODING=1 NUM_ITERS=2 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+# FA=1 SP=$GBS POS_ENCODING=1  DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_SP16.log    NUM_ITERS=2 USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+
+# FA=1 SP=$GBS POS_ENCODING=1  USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+# FA=1 SP=$GBS POS_ENCODING=1  USP_ring=1    bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+# FA=1 SIZE=$GBS    POS_ENCODING=1       bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+
 # export GBS=2
+# FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+# FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ring=1    bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+# FA=1 SIZE=$GBS SP=1      POS_ENCODING=1                bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+
+# export GBS=1
+# FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
+# FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ring=1    bash $PYSCRIPT |& tee $LOGDIR/mds5.log
+# FA=1 SIZE=$GBS SP=1      POS_ENCODING=1                bash $PYSCRIPT |& tee $LOGDIR/mds6.log
+
+###
 # factor=100 NUM_ITERS=1 FA=1 SP=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 # factor=200 NUM_ITERS=1 FA=1 SP=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
 # factor=400 NUM_ITERS=1 FA=1 SP=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log

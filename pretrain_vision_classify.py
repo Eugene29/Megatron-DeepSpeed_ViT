@@ -73,10 +73,10 @@ def get_batch(data_iterator):
         sample: A data sample with images, tokens, etc.
     """
     args = get_args()
-    # rank = args.get_rank()
     rank = args.rank
     dp = mpu.get_data_parallel_world_size()
     dp_group = mpu.get_data_parallel_group()
+    dp_rank = mpu.get_data_parallel_rank()
     dp_src_rank = mpu.get_data_parallel_src_rank()
 
     ## Generate Random TOY dataset
@@ -85,9 +85,7 @@ def get_batch(data_iterator):
         ## 1. First, only rank0 generates the data
         ## 2. rank0 scatters data to other sp_rank=1
 
-        # raise KeyboardInterrupt()
         dev = deepspeed.accelerator.get_accelerator().current_device()
-        # raise KeyboardInterrupt()
 
         b = int(os.environ["GBS"])
         c = args.num_channels
@@ -102,34 +100,46 @@ def get_batch(data_iterator):
         img_dtype = torch.float16
         label_dtype = torch.int64
 
-        # raise KeyboardInterrupt()
-        img = torch.empty(b // dp, c, h, w, dtype=img_dtype, device=dev)
-        label = torch.empty(b // dp, dtype=label_dtype, device=dev)
+        # img = torch.empty(b // dp, c, h, w, dtype=img_dtype, device=dev)
+        # label = torch.empty(b // dp, dtype=label_dtype, device=dev)
 
-        # raise KeyboardInterrupt()
-        if rank == 0:
+        # if rank == 0:
+        #     ## Generate TOY DATASET on rank0
+        #     num_classes = int(os.environ["NUM_CLASSES"])
+        #     full_img = torch.randn(b, c, h, w, dtype=img_dtype, device=dev) ## B, S
+        #     full_label = torch.randint(num_classes, (b,), dtype=label_dtype, device=dev) ## B, S
+
+        #     img_list = [full_img[MBS*i: MBS*i + MBS]for i in range(dp)]
+        #     label_list = [full_label[MBS*i: MBS*i + MBS]for i in range(dp)]
+
+        #     # ## Logging Full TOY data
+        #     # with open(os.environ["TOY_DATALOG"], mode='a') as file:
+        #     #     file.write(f"img: {str(full_img)}\n")
+        #     #     file.write(f"label: {str(full_label)}\n")
+        # else:
+        #     img_list = None
+        #     label_list = None
+
+        # if dp_src_rank == 0: ## only communicate within the first dp group
+        #     ## Distribute TOY DATASET across DP src ranks
+        #     dist.scatter(img, img_list, src=0, group=dp_group)
+        #     dist.scatter(label, label_list, src=0, group=dp_group)
+
+        #     data_dict = {"image": img, "label": label}
+        # else:
+        #     data_dict = None
+        # dist.barrier() ## Q. useless? 
+
+        if dp_src_rank == 0: ## only communicate within the first dp group
             ## Generate TOY DATASET on rank0
             num_classes = int(os.environ["NUM_CLASSES"])
             full_img = torch.randn(b, c, h, w, dtype=img_dtype, device=dev) ## B, S
             full_label = torch.randint(num_classes, (b,), dtype=label_dtype, device=dev) ## B, S
 
-            img_list = [full_img[MBS*i: MBS*i + MBS]for i in range(dp)]
-            label_list = [full_label[MBS*i: MBS*i + MBS]for i in range(dp)]
-
-            # ## Logging Full TOY data
-            # with open(os.environ["TOY_DATALOG"], mode='a') as file:
-            #     file.write(f"img: {str(full_img)}\n")
-            #     file.write(f"label: {str(full_label)}\n")
-        else:
-            img_list = None
-            label_list = None
-
-        if dp_src_rank == 0: ## only communicate within the first dp group
-            ## Distribute TOY DATASET across DP src ranks
-            dist.scatter(img, img_list, src=0, group=dp_group)
-            dist.scatter(label, label_list, src=0, group=dp_group)
-
-            data_dict = {"image": img, "label": label}
+            ## Partition data to replicate DP mechanism. 
+            strt_idx = MBS * dp_rank
+            end_idx = strt_idx + MBS
+            data_dict = {'image': full_img[strt_idx: end_idx], 'label': full_label[strt_idx: end_idx]}
         else:
             data_dict = None
     else:
@@ -142,22 +152,23 @@ def get_batch(data_iterator):
         else:
             data_dict = None
 
-    # raise KeyboardInterrupt()
     ## Log data (only from the first dp group)
     if "DATA_PATH_LOG" in os.environ and dp_src_rank == 0:
+        # TODO: make the print of data ordered by rank
+        # print(f"rank: {rank}")
+        # print(f"dp_src_rank: {dp_src_rank}")
+        # print(f"dp_group2: {dp_group}")
+        # dist.barrier(group=dp_group) ## communicate only within the first group.
+        # raise KeyboardInterrupt()
+    
         with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
-            for i in range(dp):
-                if rank == i:
-                    file.write(f"img: {data_dict['image']}\n")
-                    file.write(f"label: {data_dict['label']}\n")
-                dist.barrier(group=dp_group) ## communicate only within the first group.
-
-        # pass
-    #     with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
-    #         pass
-
-        
-    # raise KeyboardInterrupt()
+            file.write(f"img: {data_dict['image']}\n")
+            file.write(f"label: {data_dict['label']}\n")
+            # for i in range(dp):
+            #     if rank == i:
+            #         file.write(f"img: {data_dict['image']}\n")
+            #         file.write(f"label: {data_dict['label']}\n")
+            #     dist.barrier(group=dp_group) ## communicate only within the first group.
 
     data_i = tensor_parallel.broadcast_data(["label"], data_dict, torch.int64) ##TODO: lower precision, will it get angry at me if I set it to 16 or 32? 
     data_f = tensor_parallel.broadcast_data(["image"], data_dict, torch.float16) ## images are in int8 -> fp16

@@ -10,7 +10,7 @@ echo "Launching Environment."
 # python -c "import deepspeed; deepspeed.__version__"
 # cd ..
 
-## DATA_FILEPATHS CONSUMED
+## DATA_FILEPATHS or INPUT_TENSOR CONSUMED
 if [[ $DATA_PATH_LOG ]]; then
      > $DATA_PATH_LOG ## clear file
 elif [[ $TOY_DATALOG ]]; then

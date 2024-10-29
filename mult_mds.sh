@@ -4,7 +4,8 @@ LOGDIR=$WORKING_DIR/logs
 PYSCRIPT=$WORKING_DIR/mds_launch.sh
 DATA_PATH_LOG_PREFIX=$WORKING_DIR/logs
 
-## ARGUMENTS:
+
+################################ ARGUMENTS ################################
 # USP_ulysses=1, SP=
 # USP_ring=1, SP=
 # USP_hybrid=(2,4)                                      ## TBD
@@ -24,33 +25,47 @@ DATA_PATH_LOG_PREFIX=$WORKING_DIR/logs
 # FA=1                                                  ## Turn on Flash Attention
 # DEBUG={SP, DP}                                        ## Triggers debug mode: run for 1 iteration and record forward activations, output, and gradients. 
 
-## CURRENT CONSTRAINTS:
+
+################################ CURRENT CONSTRAINTS ################################
 # 1. GLOBAL_MEAN_POOLING is required for SP (for now)
 # 2. Pass at least GBS or MBS
 
 
-## Global Args
+################################ Global ARGUMENTS ################################
 export GLOBAL_MEAN_POOLING=1
 # export WANDB_MODE=disabled
 # export CUDA_DEVICE_MAX_CONNECTIONS=1 ## TODO: What is this??
 export drop_last_batch_with_GBS=1
 # export PROFILE=1
 
-## EXAMPLE RUNS
+
+################################ EXAMPLE RUNS ################################
 export DATA=CIFAR
-export GBS=128
-SIZE=1 NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
-SP=1   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
-SP=4   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+export GBS=2048
+SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
 
-# export DATA=TOY; export factor=2
-# export GBS=4
-# ## TODO: Depending on GBS, one of the three will have a different output for Toy dataset even though input is the same?
-# SP=1   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
-# SP=4   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
-# SIZE=1 NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+export GBS=4096
+SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
 
-## EXAMPLE RUNS with Data Logging
+# # export DATA=TOY; export factor=2
+# # export GBS=4
+# # ## TODO: Depending on GBS, one of the three will have a different output for Toy dataset even though input is the same?
+# # SP=1   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+# # SP=4   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+# # SIZE=1 NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+
+## ACTIVATION CKPT ##
+export DATA=CIFAR
+export GBS=4096
+
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds2.log ## 30.43 GB
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log ## 12.74 GB
+
+################################ EXAMPLE RUNS with Data Logging ################################
 # SIZE=1 NUM_ITERS=2 FA=1 POS_ENCODING=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP1.log bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 # SP=1   NUM_ITERS=2 FA=1 POS_ENCODING=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP4.log bash $PYSCRIPT |& tee $LOGDIR/mds2.log
 

@@ -98,6 +98,10 @@ DS_ARGS="
      --deepspeed \
      --deepspeed_config=$ds_json
 "
+if [[ $ACT_CKPT ]]; then
+     DS_ARGS="--deepspeed-activation-checkpointing $DS_ARGS" ## Useless? 
+     MEG_ARGS="--checkpoint-activations"
+fi
 
 echo "Launching mpiexec."
 # nsys="nsys profile -o $log_dir/$time --stats=true --show-output=true"
@@ -110,6 +114,8 @@ run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile
      ${CLASSIFIER_ARGS} \
      ${DATA_ARGS} \
      ${OUTPUT_ARGS} \
+     ${MEG_ARGS} \
      ${DS_ARGS}"
 
+echo "run cmd: $run_cmd"
 eval $run_cmd

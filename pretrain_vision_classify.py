@@ -30,21 +30,18 @@ def model_provider(pre_process=True, post_process=True):
     config = core_transformer_config_from_args(args)
     # see_memory_usage(f"Before Building Model", force=True)
 
-    ## Something related to zero if you are using seq parallel. Feeding it to deepspeed zero?
+    ##TODO: enable PP here?
     # if hasattr(mpu, 'get_sequence_data_parallel_group'):
     #     dpg = mpu.get_sequence_data_parallel_group()
     # elif hasattr(mpu, 'get_data_parallel_group'):
     #     dpg = mpu.get_data_parallel_group()
     # else:
     #     dpg = None
-    
-    ##TODO: Check what this does for ZERO
     # with deepspeed.zero.Init(data_parallel_group=dpg,
-    #                         remote_device=None if args.remote_device == 'none' else args.remote_device,
-    #                         config_dict_or_path=args.deepspeed_config_dict,
-    #                         enabled=args.zero_stage == 3,
-    #                         mpu=mpu):
-    ##TODO: enable PP here?
+    #                          remote_device=None if args.remote_device == 'none' else args.remote_device,
+    #                          config_dict_or_path=args.deepspeed_config_dict,
+    #                          enabled=args.zero_stage == 3,
+    #                          mpu=mpu):
     if args.vision_backbone_type == 'vit':
         print_rank_0("building VIT model ...")
         model = VitClassificationModel(config=config,

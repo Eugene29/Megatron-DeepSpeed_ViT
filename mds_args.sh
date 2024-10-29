@@ -152,10 +152,15 @@ cat <<EOF > "$DS_CONFIG_FNAME"
                         }
 }
 EOF
-    # "activation_checkpointing": {
-    #     "partition_activations": true,
-    #     "contiguous_memory_optimization": true
-    # }
+## TODO: add optimal activation_checkpointing config
+#  "activation_checkpointing": {
+#     "partition_activations": false,
+#     "cpu_checkpointing": false,
+#     "contiguous_memory_optimization": false,
+#     "number_checkpoints": null,
+#     "synchronize_checkpoint_boundary": false,
+#     "profile": false
+#     }
 
 ## MODEL CONFIGURATION ##
 

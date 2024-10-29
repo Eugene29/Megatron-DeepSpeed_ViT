@@ -13,6 +13,7 @@ fi
 ## GPT-3 models use 2K sequence length/context window
 # seq_len=32768
 export seq_len=8192
+train_iter=15
 export DATA=./ALCF/data-lists/polaris/books.txt
 ## The "GPT-3 XXX" below are configs from GPT-3 paper
 ## https://arxiv.org/abs/2005.14165, choose based on
@@ -113,7 +114,6 @@ init_std=0.018
 ## The main termination condition, original GPT-3 paper trains for 300B tokens.
 train_tokens_in_billion=300
 # train_tokens=$((${train_tokens_in_billion} * 1000000000))
-train_iter=15
 train_tokens=$(($seq_len * $global_batch_size * $train_iter)) ## The real termination condition (terminator)
 
 ## train_samples is another termination condition and also affect the number of 

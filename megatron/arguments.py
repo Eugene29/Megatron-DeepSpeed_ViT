@@ -50,8 +50,6 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     # Custom arguments.
     if extra_args_provider is not None:
         parser = extra_args_provider(parser)
-    # parser.add_argument("--use_unifiedSP", action="store_true")
-    # parser.add_argument("--use_wandb", action="store_true")
 
     parser = deepspeed.add_config_arguments(parser)
 
@@ -62,8 +60,6 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
         args = parser.parse_args()
 
     ## Custom arguments 2.
-    # args.dataset = os.environ["DATA"] if "DATA" in os.environ else None
-
 
     # helper argument to set deepspeed pipeline parallel or not
     args.ds_pipeline_enabled = not args.no_pipeline_parallel
@@ -72,7 +68,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
     args.pos_encoding = os.getenv('POS_ENCODING', 0)
-    ## TODO: unify below under one string variable
+    ## TODO: unify below args under one string variable?
     args.USP_ulysses = os.getenv('USP_ulysses', 0)
     args.USP_ring = os.getenv('USP_ring', 0)
     args.USP_hybrid = os.getenv('USP_hybrid', 0)
@@ -107,12 +103,6 @@ def validate_args(args, defaults={}):
         assert args.pipeline_model_parallel_size == 1, \
             "pipeline_model_parallel_size must be 1 if pipeline parallel is disabled"
         
-    # if args.ds_sequence_parallel_size > 1:
-    #     # import deepspeed
-    #     # print(f"deepspeed.__version__: {deepspeed.__version__}")
-    #     # deepspeed.__version__ ## sometimes calling this fixes the deepspeed version issue.
-    #     assert version.parse(deepspeed.__version__) >= version.parse("0.10.2"), "sequence parallelism requires DeepSpeed version 0.10.2+"
-
     model_parallel_size = args.pipeline_model_parallel_size * \
                           args.tensor_model_parallel_size * \
                           args.ds_sequence_parallel_size

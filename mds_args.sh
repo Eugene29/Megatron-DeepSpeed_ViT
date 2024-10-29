@@ -122,6 +122,10 @@ if [[ $NUM_ITERS ]]; then
     TRAIN_SAMPLES=$(($NUM_ITERS * $GBS))
 fi
 
+if [[ -z $ZERO ]]; then
+    ZERO=0
+fi
+
 cat <<EOF > "$DS_CONFIG_FNAME"
 {
     "train_micro_batch_size_per_gpu": $MBS,
@@ -149,7 +153,10 @@ cat <<EOF > "$DS_CONFIG_FNAME"
                         "top_modules": 1,
                         "detailed": false,
                         "output_file": null
-                        }
+                        },
+    "zero_optimization": {
+        "stage": $ZERO
+    }
 }
 EOF
 ## TODO: add optimal activation_checkpointing config
@@ -174,7 +181,7 @@ EOF
 NLAYERS=24
 HSIZE=1024
 FFN_HSIZE=4096
-NUM_HEADS=32
+NUM_HEADS=16
 
 ## VIT-2B (1.6B in VIT? Why doesn't it fit?)
 # NLAYERS=10

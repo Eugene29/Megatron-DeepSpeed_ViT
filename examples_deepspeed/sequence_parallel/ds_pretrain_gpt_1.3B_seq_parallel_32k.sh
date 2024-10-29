@@ -15,6 +15,7 @@ fi
 export seq_len=8192
 train_iter=15
 export DATA=./ALCF/data-lists/polaris/books.txt
+export global_batch_size=4
 ## The "GPT-3 XXX" below are configs from GPT-3 paper
 ## https://arxiv.org/abs/2005.14165, choose based on
 ## your desired model size or build your own configs
@@ -41,31 +42,28 @@ export DATA=./ALCF/data-lists/polaris/books.txt
 # init_std=0.02
 
 ## GPT-3 Medium 350M
-model_size=0.35
-num_layers=24
-hidden_size=1024
-num_attn_heads=16
-export global_batch_size=4
-lr=3.0e-4
-min_lr=1.0e-6
-init_std=0.018
+# model_size=0.35
+# num_layers=24
+# hidden_size=1024
+# num_attn_heads=16
+# lr=3.0e-4
+# min_lr=1.0e-6
+# init_std=0.018
 
 ## GPT-3 Large 760M
-# model_size=0.76
-# num_layers=24
-# hidden_size=1536
-# num_attn_heads=16
-# global_batch_size=256
-# lr=2.5e-4
-# min_lr=1.0e-6
-# init_std=0.015
+model_size=0.76
+num_layers=24
+hidden_size=1536
+num_attn_heads=16
+lr=2.5e-4
+min_lr=1.0e-6
+init_std=0.015
 
 ## GPT-3 XL 1.3B
 # model_size=1.3
 # num_layers=24
 # hidden_size=2048
 # num_attn_heads=16
-# global_batch_size=4
 # lr=2.0e-4
 # min_lr=1.0e-6
 # init_std=0.013
@@ -160,7 +158,7 @@ pp_size=1
 no_pp="true"
 
 ## ZeRO-based data parallelism, stage=0 will disable ZeRO
-zero_stage=0
+zero_stage=${zero_stage:-0}
 
 ## Total number of GPUs. ds_ssh is from DeepSpeed library.
 num_gpus=$(nvidia-smi -L | wc -l)

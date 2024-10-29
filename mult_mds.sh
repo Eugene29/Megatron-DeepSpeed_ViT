@@ -24,11 +24,14 @@ DATA_PATH_LOG_PREFIX=$WORKING_DIR/logs
 # NUM_ITERS                                             ## Num train iteration
 # FA=1                                                  ## Turn on Flash Attention
 # DEBUG={SP, DP}                                        ## Triggers debug mode: run for 1 iteration and record forward activations, output, and gradients. 
+# ZERO
+# ACT_CKPT
 
 
 ################################ CURRENT CONSTRAINTS ################################
 # 1. GLOBAL_MEAN_POOLING is required for SP (for now)
 # 2. Pass at least GBS or MBS
+# 3. ZERO123 has different loss than ZERO=0. Also observed in the example script and needs investigation.
 
 
 ################################ Global ARGUMENTS ################################
@@ -41,29 +44,36 @@ export drop_last_batch_with_GBS=1
 
 ################################ EXAMPLE RUNS ################################
 export DATA=CIFAR
-export GBS=2048
+export GBS=128
 SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
 SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+
+export GBS=2048
+SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds5.log
+SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds6.log
 
 export GBS=4096
-SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
-SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
-SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+# SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds7.log ## OOM
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds8.log
+SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds9.log
 
-# # export DATA=TOY; export factor=2
-# # export GBS=4
-# # ## TODO: Depending on GBS, one of the three will have a different output for Toy dataset even though input is the same?
-# # SP=1   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
-# # SP=4   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
-# # SIZE=1 NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
-
-## ACTIVATION CKPT ##
+# ## ACTIVATION CKPT & ZERO ##
 export DATA=CIFAR
 export GBS=4096
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1                   bash $PYSCRIPT |& tee $LOGDIR/mds10.log
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1        bash $PYSCRIPT |& tee $LOGDIR/mds11.log
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 ZERO=1 bash $PYSCRIPT |& tee $LOGDIR/mds12.log ## Loss differs than Zero=0 and Memory increased from iter 15
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 ZERO=2 bash $PYSCRIPT |& tee $LOGDIR/mds13.log ## Loss differs than Zero=0 and Memory increased from iter 15
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 ZERO=3 bash $PYSCRIPT |& tee $LOGDIR/mds14.log ## Loss differs than Zero=0 and Memory increased from iter 15
 
-SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds2.log ## 30.43 GB
-SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log ## 12.74 GB
+# export DATA=TOY; export factor=2
+# export GBS=4
+# ## TODO: Depending on GBS, one of the three will have a different output for Toy dataset even though input is the same?
+# SP=1   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+# SP=4   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+# SIZE=1 NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 
 ################################ EXAMPLE RUNS with Data Logging ################################
 # SIZE=1 NUM_ITERS=2 FA=1 POS_ENCODING=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP1.log bash $PYSCRIPT |& tee $LOGDIR/mds1.log

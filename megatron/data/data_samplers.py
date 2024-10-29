@@ -174,7 +174,6 @@ class MegatronPretrainingRandomSampler:
             if 'drop_last_batch_with_GBS' in os.environ:
                 full_bucket_size = (self.total_samples // self.micro_batch_times_data_parallel_size) \
                                     * self.micro_batch_times_data_parallel_size
-                print("yes it is called")
             else:
                 full_bucket_size = (self.total_samples // self.micro_batch_size) \
                                     * self.micro_batch_size

@@ -2,7 +2,7 @@ export NEWDS=1 ## TODO: parse Deepspeed version to deprecate this flag.
 WORKING_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
 LOGDIR=$WORKING_DIR/logs
 PYSCRIPT=$WORKING_DIR/mds_launch.sh
-DATA_PATH_LOG_PREFIX=$DIR/logs
+DATA_PATH_LOG_PREFIX=$WORKING_DIR/logs
 
 ## ARGUMENTS:
 # USP_ulysses=1, SP=
@@ -32,35 +32,43 @@ DATA_PATH_LOG_PREFIX=$DIR/logs
 ## Global Args
 export GLOBAL_MEAN_POOLING=1
 # export WANDB_MODE=disabled
-export drop_last_batch_with_GBS=1
 # export CUDA_DEVICE_MAX_CONNECTIONS=1 ## TODO: What is this??
+export drop_last_batch_with_GBS=1
 # export PROFILE=1
 
 ## EXAMPLE RUNS
-export DATA=TOY; export factor=2
-export GBS=512
+export DATA=CIFAR
+export GBS=128
 SIZE=1 NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 SP=1   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
 SP=4   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
 
+# export DATA=TOY; export factor=2
+# export GBS=4
+# ## TODO: Depending on GBS, one of the three will have a different output for Toy dataset even though input is the same?
+# SP=1   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+# SP=4   NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+# SIZE=1 NUM_ITERS=30 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 
 ## EXAMPLE RUNS with Data Logging
-# export DATA=TOY; export factor=297 ## GPU1 max: 297?
-# export GBS=256
+# SIZE=1 NUM_ITERS=2 FA=1 POS_ENCODING=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP1.log bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+# SP=1   NUM_ITERS=2 FA=1 POS_ENCODING=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP4.log bash $PYSCRIPT |& tee $LOGDIR/mds2.log
 
-# FA=1 SP=$GBS POS_ENCODING=1  USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
-# FA=1 SP=$GBS POS_ENCODING=1  USP_ring=1    bash $PYSCRIPT |& tee $LOGDIR/mds3.log
-# FA=1 SIZE=$GBS    POS_ENCODING=1       bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+# export DATA=TOY; export factor=297 ## GPU1 max: 297?
+# export GBS=4
+# FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+# FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ring=1    bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+# FA=1 SIZE=$GBS           POS_ENCODING=1                bash $PYSCRIPT |& tee $LOGDIR/mds3.log
 
 # export GBS=2
-# FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ulysses=1 DATA_PATH_LOG=$DATA_PATH_LOG_PREFIX/data_consumed_DP1.log bash $PYSCRIPT |& tee $LOGDIR/mds1.log
-# FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ring=1    bash $PYSCRIPT |& tee $LOGDIR/mds2.log
-# FA=1 SIZE=$GBS SP=1      POS_ENCODING=1                bash $PYSCRIPT |& tee $LOGDIR/mds3.log
-
-# export GBS=1
 # FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
 # FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ring=1    bash $PYSCRIPT |& tee $LOGDIR/mds5.log
 # FA=1 SIZE=$GBS SP=1      POS_ENCODING=1                bash $PYSCRIPT |& tee $LOGDIR/mds6.log
+
+# export GBS=1
+# FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds7.log
+# FA=1 SIZE=$GBS SP=$GBS   POS_ENCODING=1  USP_ring=1    bash $PYSCRIPT |& tee $LOGDIR/mds8.log
+# FA=1 SIZE=$GBS SP=1      POS_ENCODING=1                bash $PYSCRIPT |& tee $LOGDIR/mds9.log
 
 
 

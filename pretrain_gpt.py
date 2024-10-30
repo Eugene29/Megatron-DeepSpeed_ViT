@@ -107,17 +107,17 @@ def get_batch(data_iterator):
         # raise KeyboardInterrupt("break")
     
         if "DATA_PATH_LOG" in os.environ: ## tokens_consumed.log
-            ### TOY DATASET ###
-            b = int(os.environ["global_batch_size"])
-            s = int(os.environ["seq_len"]) + 1 ## Q. Why and how do we add one more to the sequence? 
-            V = 38406 ## Vocab length lower bound
-            tokens = torch.randint(V, (b, s)) ## B, S
-            ## WRONG DP BUT STILL SHOULD GIVE THE SAME OUTPUT, JUST WITHOUT THE MEMORY SAVING AND SPEEDUP. 
-            ## THIS IS BECAUSE EACH DP SEES THE SAME DATA.
-
+            if "TOY" in os.environ:
+                ### TOY DATASET ###
+                b = int(os.environ["global_batch_size"])
+                s = int(os.environ["seq_len"]) + 1 ## Q. Why and how do we add one more to the sequence? 
+                V = 38406 ## Vocab length lower bound
+                tokens = torch.randint(V, (b, s)) ## B, S
+                ## WRONG DP BUT STILL SHOULD GIVE THE SAME OUTPUT, JUST WITHOUT THE MEMORY SAVING AND SPEEDUP. 
+                ## THIS IS BECAUSE EACH DP SEES THE SAME DATA.
+                data = {'text': tokens}
             with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
-                file.write(f"tokens: {tokens}") ## write file
-            data = {'text': tokens}
+                file.write(f"tokens: {data['text']}\n") ## write file
     else:
         data = None
     data_b = tensor_parallel.broadcast_data(keys, data, datatype)

@@ -13,9 +13,13 @@ fi
 ## GPT-3 models use 2K sequence length/context window
 # seq_len=32768
 export seq_len=8192
-train_iter=15
+train_iter=${train_iter:-15}
 export DATA=./ALCF/data-lists/polaris/books.txt
 export global_batch_size=4
+
+YUNCHANG=/home/eku/long-context-attention ## Custom yunchang (USP)
+PYTHONPATH="$YUNCHANG:$PYTHONPATH"
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## The "GPT-3 XXX" below are configs from GPT-3 paper
 ## https://arxiv.org/abs/2005.14165, choose based on
 ## your desired model size or build your own configs
@@ -155,6 +159,7 @@ sp_size=${sp_size:-1}
 ## Note that currently both curriculum learning and random-LTD are NOT
 ## compatible with pipeline parallelism.
 pp_size=1
+tp_size=${tp_size:-1}
 no_pp="true"
 
 ## ZeRO-based data parallelism, stage=0 will disable ZeRO
@@ -174,7 +179,7 @@ if [ ${SIZE:--1} -eq 1 ]; then
 fi
 
 ## Data parallel size.
-dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} / ${sp_size} ))
+dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} / ${sp_size} / ${tp_size}))
 # train_samples=$(($seq_len * 25 * $dp_size)) ## commented og train_samples
 
 ## Micro batch size per GPU
@@ -277,7 +282,7 @@ megatron_options=" \
     --override-opt_param-scheduler \
     --adam-beta1 0.9 \
     --adam-beta2 0.95 \
-    --tensor-model-parallel-size 1 \
+    --tensor-model-parallel-size ${tp_size} \
     --ds-sequence-parallel-size ${sp_size} \
     --init-method-std ${init_std} \
     --micro-batch-size ${batch_size} \

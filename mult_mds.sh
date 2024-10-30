@@ -50,9 +50,11 @@ SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
 SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
 
 export GBS=2048
-SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
+SIZE=1 NUM_ITERS=20   FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
 SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds5.log
 SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds6.log
+TP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds_TP.log ## Almost matching. Is it expected and good enough?
+
 
 export GBS=4096
 # SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds7.log ## OOM

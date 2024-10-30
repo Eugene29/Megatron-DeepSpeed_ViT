@@ -31,7 +31,7 @@ DATA_PATH_LOG_PREFIX=$WORKING_DIR/logs
 ################################ CURRENT CONSTRAINTS ################################
 # 1. GLOBAL_MEAN_POOLING is required for SP (for now)
 # 2. Pass at least GBS or MBS
-# 3. ZERO123 has different loss than ZERO=0. Also observed in the example script and needs investigation.
+# 3. ZERO123 has different loss than ZERO=0. But it is also observed in the example script and needs investigation.
 
 
 ################################ Global ARGUMENTS ################################
@@ -45,12 +45,13 @@ export drop_last_batch_with_GBS=1
 ################################ EXAMPLE RUNS ################################
 export DATA=CIFAR
 export GBS=128
-SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds1.log
-SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds2.log
-SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $PYSCRIPT |& tee $LOGDIR/mds2.log
+SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
 
 export GBS=2048
-SIZE=1 NUM_ITERS=20   FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
+SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
 SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds5.log
 SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds6.log
 TP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds_TP.log ## Almost matching. Is it expected and good enough?

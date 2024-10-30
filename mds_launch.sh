@@ -13,7 +13,7 @@ fi
 SCRIPT_DIR=$(dirname $0 | xargs realpath)
 cd $SCRIPT_DIR
 PYTHONPATH=$og_PYTHONPATH
-YUNCHANG=/home/eku/long-context-attention ## Custom yunchang (USP)
+YUNCHANG=$SCRIPT_DIR/long-context-attention ## Custom yunchang (USP)
 PYTHONPATH="$YUNCHANG:$PYTHONPATH"
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Add local megatron path
 

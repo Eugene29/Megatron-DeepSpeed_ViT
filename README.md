@@ -4,6 +4,11 @@
 You'll need: Base environment + ezpz (sam's)
 
 Sam's ezpz installation:
-`git clone https://github.com/saforem2/ezpz;
+```
+git clone https://github.com/saforem2/ezpz;
 cd ezpz;
-pip install .`
+pip install .
+```
+
+## Script
+Entry Script is `mult_mds.sh`

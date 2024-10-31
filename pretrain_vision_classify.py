@@ -70,9 +70,9 @@ def get_batch(data_iterator):
         sample: A data sample with images, tokens, etc.
     """
     args = get_args()
-    rank = args.rank
+    # rank = args.rank
     dp = mpu.get_data_parallel_world_size()
-    dp_group = mpu.get_data_parallel_group()
+    # dp_group = mpu.get_data_parallel_group()
     dp_rank = mpu.get_data_parallel_rank()
     dp_src_rank = mpu.get_data_parallel_src_rank()
 
@@ -90,7 +90,7 @@ def get_batch(data_iterator):
 
         MBS = int(os.environ["MBS"])
 
-        assert MBS == b / dp, "Environment Var MBS is not local MBS"
+        assert MBS == b / dp, f"Environment Var MBS (GBS ({b})/ DP ({dp}))is not local MBS: ({MBS})"
         assert b % dp == 0, "global batch size is not divisible by dp degree"
 
         img_dtype = torch.float16
@@ -227,6 +227,9 @@ if __name__ == "__main__":
     # torch.distributed.init_process_group(backend="deepspeed", init_method="env://", world_size=WORLD_SIZE, rank=RANK)
     # ##Q. when is the above neccessary? pretrain_gpt for example, doesn't have any torch.distributed.init_process_group
     # torch.distributed.barrier()
+    # from torchvision import set_image_backend
+    # if "ACCIMAGE" in os.environ:
+    #     set_image_backend("accimage")
 
     pretrain(
         train_valid_test_datasets_provider,

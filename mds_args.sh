@@ -116,6 +116,9 @@ elif [[ $DATA == 'TOY' ]]; then
 
     ## DATA
     DS_CONFIG_FNAME="TOY.json"
+else
+    echo "Dataset not implemented"
+    exit 1
 fi
 
 if [[ $NUM_ITERS ]]; then
@@ -123,7 +126,7 @@ if [[ $NUM_ITERS ]]; then
 fi
 
 if [[ -z $ZERO ]]; then
-    ZERO=0
+    export ZERO=0
 fi
 
 cat <<EOF > "$DS_CONFIG_FNAME"
@@ -177,10 +180,16 @@ EOF
 # FFN_HSIZE=512
 # NUM_HEADS=8
 
-## VIT-Large (307M)
-NLAYERS=24
-HSIZE=1024
-FFN_HSIZE=4096
+# ## VIT-Large (307M)
+# NLAYERS=24
+# HSIZE=1024
+# FFN_HSIZE=4096
+# NUM_HEADS=16
+
+## VIT-Large (632M)
+NLAYERS=32
+HSIZE=1280
+FFN_HSIZE=5120
 NUM_HEADS=16
 
 ## VIT-2B (1.6B in VIT? Why doesn't it fit?)
@@ -212,6 +221,13 @@ export MIN_LR="${MIN_LR:-0.00001}"
 export NLAYERS="${NLAYERS}"
 export HSIZE="${HSIZE}"
 export NUM_HEADS="${NUM_HEADS}"
+
+## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+# torch.distributed.DistBackendError: NCCL error in: /soft/applications/conda/2024-04-29/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:1970, unhandled cuda error (run with NCCL_DEBUG=INFO for details), NCCL version 2.20.5
+# [rank0]: ncclUnhandledCudaError: Call to CUDA function failed.
+# export NCCL_DEBUG=INFO
 
 if [[ $GLOBAL_MEAN_POOLING ]]; then
     export SEQ_LEN=$(echo "${IMG_W} * ${IMG_W} / ${PATCH_DIM}^2" | bc)  

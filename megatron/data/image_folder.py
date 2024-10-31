@@ -40,6 +40,7 @@ import os
 import os.path
 from typing import Any, Callable, cast, Dict, List, Optional, Tuple
 import numpy as np
+from megatron import print_rank_0
 
 def has_file_allowed_extension(filename: str, extensions: Tuple[str, ...]) -> bool:
     """Checks if a file is an allowed extension.
@@ -250,11 +251,14 @@ def pil_loader(path: str) -> Image.Image:
 
 # TODO: specify the return type
 def accimage_loader(path: str) -> Any:
+    # raise KeyboardInterrupt("got here ")
     import accimage
     try:
+        print("trying to use accimage")
         return accimage.Image(path)
     except IOError:
         # Potentially a decoding problem, fall back to PIL.Image
+        print_rank_0("falling back to PIL")
         return pil_loader(path)
 
 

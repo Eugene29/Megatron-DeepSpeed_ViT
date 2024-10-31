@@ -403,7 +403,7 @@ class FlashSelfAttention(torch.nn.Module):
             self.flash_attn_func = flash_attn_varlen_func if args.use_flash_attn_v2 else flash_attn_unpadded_func
             self.use_flash_attn = True
 
-    ## Q. Slower flash attention. Why is it slower? 
+    ## Q. Slower flash attention. Why is it slower? Shouldn't basic flash_attn_func be faster than the variable-length one? 
     # def forward(self, q, k, v):
     #     from flash_attn import flash_attn_func
     #     out_ref, _, _ = flash_attn_func(
@@ -614,7 +614,9 @@ class ParallelAttention(MegatronModule):
         # Currently FlashAttention only works with causal mask
         self.causal = args.vision_backbone_type == "None" ## TODO: Double check that this is none when using LLMs
         print(f"causal is set to: {self.causal}")
-        if self.use_flash_attn_triton:
+        if args.USP_ring or args.USP_hybrid:
+            pass
+        elif self.use_flash_attn_triton:
             local_attn = FlashSelfAttentionTriton(causal=self.causal, attention_dropout=args.attention_dropout)
         elif self.use_flash_attn:
             local_attn = FlashSelfAttention(causal=self.causal, attention_dropout=config.attention_dropout)
@@ -648,8 +650,10 @@ class ParallelAttention(MegatronModule):
                 sp_size = mpu.get_sequence_parallel_world_size()
                 rank = mpu.get_sequence_data_parallel_rank()
                 world_size = torch.cuda.device_count()
-                # Where is FA argument?
-                # What is use_ulysses_low? What will be the inner SP? 
+                ## Q. Where is FA argument? 
+                ## A. Always use FA as Ring-Attention is an extension of FA
+                ## Q. What is use_ulysses_low? What will be the inner SP? 
+                USP_degree = int(sp_size**0.5)
                 set_seq_parallel_pg(sp_ulysses_degree=sp_size, sp_ring_degree=1, rank=rank, world_size=world_size, use_ulysses_low=False)
                 # self.dist_attn = AsyncLongContextAttention(ring_impl_type="basic")
                 self.dist_attn = LongContextAttention(ring_impl_type="basic")
@@ -874,8 +878,6 @@ class ParallelAttention(MegatronModule):
         args = get_args()
         if self.enable_ds_sequence_parallel:
             if args.USP_ring:
-                from time import time
-                strt = time()
                 query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous() for x in (query_layer, key_layer, value_layer)]
                 context_layer = self.dist_attn(
                     query_layer,
@@ -885,11 +887,10 @@ class ParallelAttention(MegatronModule):
                     causal=self.causal,
                     window_size=(-1, -1),
                     alibi_slopes=None,
-                    deterministic=True,
+                    # deterministic=True, ## False by default
                     return_attn_probs=False,
                     group=mpu.get_sequence_parallel_group(),
                 )
-
             elif args.USP_ulysses or args.USP_hybrid:
                 query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous() for x in (query_layer, key_layer, value_layer)]
                 context_layer = self.dist_attn(
@@ -900,10 +901,9 @@ class ParallelAttention(MegatronModule):
                     causal=self.causal,
                     window_size=(-1, -1),
                     alibi_slopes=None,
-                    deterministic=True,
+                    # deterministic=True, ## False by default
                     return_attn_probs=False,
                 )
-
             elif not args.use_unifiedSP:
                 ## Deepspeed Ulysses (FA)
                 batch_dim_idx = 1
@@ -917,12 +917,10 @@ class ParallelAttention(MegatronModule):
 
                     if not self.use_flash_attn_triton:
                         context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
-
             else:
                 ## Deepspeed Ulysses (CoreAttention)
                 # context_layer = self.dist_attn(query_layer, key_layer, value_layer, attention_mask=attention_mask)
                 context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx=batch_dim_idx, attention_mask=attention_mask)
-
         else:
             if self.use_flash_attn:
                 if not self.use_flash_attn_triton:

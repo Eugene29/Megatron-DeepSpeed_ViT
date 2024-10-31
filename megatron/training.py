@@ -1320,7 +1320,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             WS = torch.distributed.get_world_size()
             FA = 'FA_' if 'FA' in os.environ else ""
             SP = "SP" + os.environ["SP"] + "_"
+            TP = "TP" + os.environ["TP"] + "_"
+            ZERO = "ZERO" + os.environ["ZERO"] + "_"
+            ACT = "ACT_" if "ACT_CKPT" in os.environ else ""
             DATA = os.environ["DATA"]
+            
             if "USP_ulysses" in os.environ:
                 framework = "USP_ulysses"
             elif "USP_ring" in os.environ:
@@ -1339,7 +1343,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 packed = ""
 
             if torch.distributed.get_rank() == 0:
-                p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
+                p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}{TP}{ZERO}{ACT}rank{rank}.json")
 
         print_rank_0(f"PROFILING...")
         p = torch.profiler.profile(
@@ -1574,7 +1578,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         # print(f"memory_tensor: {memory_tensor}")
         # dist.all_reduce(memory_tensor, op=dist.ReduceOp.MAX)
         memory_tensor = max_memory_used
-
         samples_per_sec = global_batch_size / step_time
         print_rank_0(f"iteration:{iteration} \t"
                         f"time:{step_time:.2f} \t"

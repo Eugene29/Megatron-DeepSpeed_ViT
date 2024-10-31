@@ -34,6 +34,7 @@ echo "PYTHON PATH: $PYTHONPATH"
 
 CLASSIFIER_ARGS="
      $no_pipeline_parallel \
+     --zero-stage ${ZERO} \
      --pipeline-model-parallel-size ${PP} \
      --ds-sequence-parallel-size ${SP} \
      --tensor-model-parallel-size ${TP} \
@@ -67,6 +68,8 @@ CLASSIFIER_ARGS="
      --retro-encoder-attention-dropout 0.0 \
      --retro-encoder-hidden-dropout 0.0 \
 "
+     # --no-async-tensor-model-parallel-allreduce \
+## TODO: does --no-async-tensor-model-parallel-allreduce \ make things faster? 
 
 if [ -n "$unifiedSP" ]; then
      CLASSIFIER_ARGS="--use_unifiedSP $CLASSIFIER_ARGS"

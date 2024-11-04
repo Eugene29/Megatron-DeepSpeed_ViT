@@ -32,6 +32,7 @@
 # https://github.com/pytorch/vision/blob/main/torchvision/datasets/folder.py
 # added support for classes_fraction and data_per_class_fraction
 
+import torch.distributed
 from torchvision.datasets import VisionDataset
 from PIL import Image
 
@@ -215,29 +216,13 @@ class DatasetFolder(VisionDataset):
         Returns:
             tuple: (sample, target) where target is class_index of the target class.
         """
+        ## NOTE: the for loop and break here ensures that we can draw a data sample. 
         curr_index = index
         for x in range(self.total):
             try:
-
-                # from megatron import get_args
-                # args = get_args()
-                # with open(os.environ["DATA_PATH_LOG"], "a") as file:
-                #     # traceback.print_stack(file=file)
-                #     # rank_str = f"Rank is {args.rank} for below image data \n"
-                #     rank_str = ""
-                #     file.write(rank_str + path + '\n')
-
-                #### Using Toy Dataset ####
-                if os.environ["DATA"] != "Toy":
+                if not os.environ["DATA"] == "TOY":
                     path, target = self.samples[curr_index]
                     sample = self.loader(path)
-                else:
-                    import torch
-                    assert "IMG_W" in os.environ
-                    w = int(os.environ["IMG_W"])
-                    h = int(os.environ["IMG_H"])
-                    sample = torch.randn(3, w, h, dtype=torch.float16) ## Doesn't let 92 channels
-                    target = torch.randint(10, ())
                 break
             except Exception as e:
                 curr_index = np.random.randint(0, self.total)

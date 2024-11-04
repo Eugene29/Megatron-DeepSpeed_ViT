@@ -713,16 +713,7 @@ def train_step(forward_step_func, data_iterator,
     
     import os
     debug_mode = 'DEBUG_FNAME' in os.environ
-    import megatron.core.parallel_state as mpu
-    seq_rank = mpu.get_sequence_parallel_rank()
-    
-    # global count
-    # global threshold
 
-    # if debug_fname == "None":
-    # count+=1
-    # print(f"count: {count}")
-    # if debug_mode and count < threshold:
     if not debug_mode:
         losses_reduced = forward_backward_func(
             forward_step_func=forward_step_func,
@@ -734,7 +725,9 @@ def train_step(forward_step_func, data_iterator,
             decoder_seq_length=args.decoder_seq_length,
             forward_only=False)
     else:
-        # model[0].eval()
+        import megatron.core.parallel_state as mpu
+        seq_rank = mpu.get_sequence_parallel_rank()
+
         torch.manual_seed(33333)
         bs = 16
         w_and_h = int(os.environ["IMG_W"])
@@ -749,12 +742,6 @@ def train_step(forward_step_func, data_iterator,
             decoder_seq_length=args.decoder_seq_length,
             forward_only=False)
 
-        # input_tensor = torch.randn(32, 3, 32, 32, dtype=torch.half, device=torch.cuda.current_device())
-        # output = model[0](input_tensor)
-        #     with open(debug_fname, "a") as f:
-        #         f.write(f"[{seq_rank}] output: {output}\n")
-
-        ## TODO: maybe the other ranks have different gradients when you used vocab_parallel?
         outputs, gradients, before_weights, after_weights = [], [], [], []
         debug_fname = os.environ['DEBUG_FNAME']
         with open(debug_fname, "a") as f:
@@ -811,7 +798,6 @@ def train_step(forward_step_func, data_iterator,
 
     ## print gradient(make sure they are emptied and updated)
     ## check the updated weights (should be identical to DP)
-    # if debug_fname != "None" and count == threshold:
     if debug_mode:
         with open(debug_fname, "a") as f:
             f.write(f"\n\n\n\n-------------------------------------------\n[{seq_rank}] Gradients after step:")
@@ -822,7 +808,6 @@ def train_step(forward_step_func, data_iterator,
             max_memory = torch.cuda.max_memory_allocated()
             f.write(f"\nmax_memory: {max_memory / (1024 ** 3)}")
         
-        # torch.save([gradients, before_weights, after_weights], debug_fname + '.pt')
         raise KeyboardInterrupt("Ran one batch of toy-dataset")
 
     # Gather params.
@@ -1193,6 +1178,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             elapsed_time,
             total_iterations
         )
+
         samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
         tokens_per_sec = samples_per_sec * seq_len
         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
@@ -1324,20 +1310,38 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         assert model[0].random_ltd_enabled()
         args.random_ltd_layer_num = model[0].random_ltd_scheduler.get_random_ltd_layer_num()
         
-    def trace_handler(p):
-        # output = p.key_averages().table(sort_by="self_cuda_time_total", row_limit=10)
-        log_dir = "./trace_vit/"
-        os.makedirs(log_dir, exist_ok=True)
-        rank = torch.xpu.current_device()
-        if rank == 0:
-            Ulysses = "unifiedSP" if "unifiedSP" in os.environ else "DS"
-            FA = 'FA_' if 'FA' in os.environ else ""
-            SP = "SP" + os.environ["SP"] + "_"
-            p.export_chrome_trace(log_dir + f"Aurora_{Ulysses}_{FA}{SP}rank{rank}.json")
-
     import os
     profile_enabled = "PROFILE" in os.environ
     if profile_enabled:
+        def trace_handler(p):
+            # output = p.key_averages().table(sort_by="self_cuda_time_total", row_limit=10)
+            log_dir = "./trace_vit/"
+            os.makedirs(log_dir, exist_ok=True)
+            rank = torch.cuda.current_device()
+            WS = torch.distributed.get_world_size()
+            FA = 'FA_' if 'FA' in os.environ else ""
+            SP = "SP" + os.environ["SP"] + "_"
+            DATA = os.environ["DATA"]
+            if "USP_ulysses" in os.environ:
+                framework = "USP_ulysses"
+            elif "USP_ring" in os.environ:
+                framework = "USP_ring"
+            elif "USP_hybrid" in os.environ:
+                framework = "USP_hybrid"
+            else:
+                framework = "DS"
+            
+            if "PACKED" in os.environ:
+                if os.environ["PACKED"] == "5D":
+                    packed = "packed5D_"
+                else:
+                    packed = "packed_"
+            else:
+                packed = ""
+
+            if torch.distributed.get_rank() == 0:
+                p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
+
         print_rank_0(f"PROFILING...")
         p = torch.profiler.profile(
             schedule=torch.profiler.schedule(wait=5, warmup=2, active=2),
@@ -1350,7 +1354,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         p.start()
         args.train_iters = 10
 
-    def num_floating_point_operations(args, batch_size):
+    def llm_num_floating_point_operations(args, batch_size):
         # Group Query Attention.
         # if not args.group_query_attention:
         if not args.num_key_value_heads:
@@ -1379,11 +1383,33 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 + (args.padded_vocab_size / (2 * args.num_layers * args.hidden_size))
             )
         )
+
+    def num_floating_point_operations(args, batch_size):
+        B = batch_size ## Global Batch Size
+        s = args.seq_length ## sequence length
+        h = args.hidden_size ## emb hidden dimension
+        h_ = args.ffn_hidden_size ## ffnn hidden dimension
+        l = args.num_layers ## num att. layer
+        p = args.patch_dim ## patch size
+        c = args.num_channels ## num channels
+
+        Att_computation = 4 * B * s**2 * h ## QK^T, (NxN) @ V
+        Lin_Transform = 8 * B * s * h**2 ## Q, K, V, O
+        MLP = 4 * B * s * h * h_ ## 2 Lin Transform
+        Lin_Embedding = 2 * B * s * p**2 * c * h ## (B s p^2*c) @ (p^2*c h)
+        ## Since num_classes << s * h, we can ignore num_classes.
+
+        return 3 * (l * (Att_computation +  Lin_Transform + MLP) + Lin_Embedding) ## x3 for fwd + bwd(2x)
+
+    ## Checkout Model parameters
     args = get_args()
-    from time import time
+    if args.rank == 0:
+        from torchinfo import summary
+        summary(model[0])
+
     while iteration < args.train_iters and (args.train_tokens is None or \
         args.consumed_train_tokens < args.train_tokens):
-        strt = time()
+        strt = time.time()
         trigger(on_step_begin)
         update_num_microbatches(args.consumed_train_samples)
         if args.deepspeed:
@@ -1392,8 +1418,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                 args.micro_batch_size * \
                                 get_num_microbatches()
             model[0].set_train_batch_size(global_batch_size)
-        tot_Tflops = num_floating_point_operations(args=args, batch_size=global_batch_size) / 1000 ** 4
+            tot_Tflops = num_floating_point_operations(args=args, batch_size=global_batch_size) / 1000 ** 4
+            llm_tot_Tflops = llm_num_floating_point_operations(args=args, batch_size=global_batch_size) / 1000**4
 
+        ## Check all code updates and clean then up. 
         if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
             curriculum_seqlen = args.curriculum_scheduler.update_difficulty( \
                     args.iteration + 1)
@@ -1402,6 +1430,23 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     update_rotary_pos_emb(curriculum_seqlen)
             args.curriculum_seqlen = curriculum_seqlen
         args.curr_iteration = iteration
+
+        if "DATA_PATH_LOG" in os.environ:
+            args = get_args()
+            if args.rank == 0:
+                with open(os.environ["DATA_PATH_LOG"], "a") as file:
+                    file.write("\n" + "#"*30 + f" iter {iteration} " + f"#"*30 + "\n")
+                    file.flush()
+            torch.distributed.barrier() ## For cleaner prints without race conditions. 
+            
+        if "TOY_DATALOG" in os.environ:
+            args = get_args()
+            if args.rank == 0:
+                with open(os.environ["TOY_DATALOG"], "a") as file:
+                    file.write("\n" + "#"*30 + f" iter {iteration} " + f"#"*30 + "\n")
+                    file.flush()
+            torch.distributed.barrier()
+
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
             train_step(forward_step_func,
                     train_data_iterator,
@@ -1409,6 +1454,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     optimizer,
                     opt_param_scheduler,
                     config)
+        
         iteration += 1
         args.iteration = iteration
         new_samples = mpu.get_data_parallel_world_size() * \
@@ -1520,9 +1566,23 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         if profile_enabled:
             p.step()
-        step_time = time() - strt
-        max_memory_used = torch.xpu.max_memory_allocated() / (1024**3)
-        print_rank_0(f"iteration: {iteration} time: {step_time} TFLOPS: {tot_Tflops / step_time} Max_memory: {max_memory_used}")
+
+        step_time = time.time() - strt
+        max_memory_used = torch.cuda.max_memory_allocated() / (1024**3)
+        ## TODO: Why is it that we cannot get close to 40 GB of memory usage? 
+        # dev = deepspeed.accelerator.get_accelerator().current_device()
+        # memory_tensor = torch.tensor(max_memory_used, device=dev)
+        # print(f"memory_tensor: {memory_tensor}")
+        # dist.all_reduce(memory_tensor, op=dist.ReduceOp.MAX)
+        memory_tensor = max_memory_used
+
+        samples_per_sec = global_batch_size / step_time
+        print_rank_0(f"iteration:{iteration} \t"
+                        f"time:{step_time:.2f} \t"
+                        f"LLM_TFLOPS:{llm_tot_Tflops / step_time:.2f} \t"
+                        f"TFLOPS:{tot_Tflops / step_time:.2f} \t"
+                        f"Samples/Sec:{samples_per_sec:.2f} \t"
+                        f"Max_memory:{memory_tensor:.2f}" )
 
     if profile_enabled:
         p.stop()

@@ -1,10 +1,25 @@
 #!/bin/bash
-dir=`pwd`
+dir=$(dirname $0 | xargs realpath)
+cd $dir
+# module load conda
+# conda activate base
+. ~/venv/stable_ds15.1/bin/activate
+
+if [ -n "$DATA_PATH_LOG" ]; then
+    > $DATA_PATH_LOG
+fi
 ###############################################################################
 ### Main configs
 ## GPT-3 models use 2K sequence length/context window
-seq_len=32768
+# seq_len=32768
+export seq_len=8192
+train_iter=${train_iter:-15}
 export DATA=./ALCF/data-lists/polaris/books.txt
+export global_batch_size=4
+
+YUNCHANG=/home/eku/long-context-attention ## Custom yunchang (USP)
+PYTHONPATH="$YUNCHANG:$PYTHONPATH"
+export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## The "GPT-3 XXX" below are configs from GPT-3 paper
 ## https://arxiv.org/abs/2005.14165, choose based on
 ## your desired model size or build your own configs
@@ -35,30 +50,27 @@ export DATA=./ALCF/data-lists/polaris/books.txt
 # num_layers=24
 # hidden_size=1024
 # num_attn_heads=16
-# global_batch_size=256
 # lr=3.0e-4
 # min_lr=1.0e-6
 # init_std=0.018
 
 ## GPT-3 Large 760M
-# model_size=0.76
-# num_layers=24
-# hidden_size=1536
-# num_attn_heads=16
-# global_batch_size=256
-# lr=2.5e-4
-# min_lr=1.0e-6
-# init_std=0.015
+model_size=0.76
+num_layers=24
+hidden_size=1536
+num_attn_heads=16
+lr=2.5e-4
+min_lr=1.0e-6
+init_std=0.015
 
 ## GPT-3 XL 1.3B
-model_size=1.3
-num_layers=24
-hidden_size=2048
-num_attn_heads=16
-global_batch_size=4
-lr=2.0e-4
-min_lr=1.0e-6
-init_std=0.013
+# model_size=1.3
+# num_layers=24
+# hidden_size=2048
+# num_attn_heads=16
+# lr=2.0e-4
+# min_lr=1.0e-6
+# init_std=0.013
 
 ## GPT-3 2.7B
 # model_size=2.7
@@ -103,7 +115,8 @@ init_std=0.013
 ### Training duration configs
 ## The main termination condition, original GPT-3 paper trains for 300B tokens.
 train_tokens_in_billion=300
-train_tokens=$((${train_tokens_in_billion} * 1000000000))
+# train_tokens=$((${train_tokens_in_billion} * 1000000000))
+train_tokens=$(($seq_len * $global_batch_size * $train_iter)) ## The real termination condition (terminator)
 
 ## train_samples is another termination condition and also affect the number of 
 ## data samples to be indexed. Since we want to reach the train_tokens
@@ -111,6 +124,7 @@ train_tokens=$((${train_tokens_in_billion} * 1000000000))
 ## so we just set this config large enough to make sure we have enough
 ## processed data and don't terminate by train_samples.
 train_samples=$(( 300 * 1000000000 * 2 / ${seq_len} ))
+# train_samples=$(( 300 * 1000000000 * 2 / ${seq_len} ))
 
 ## Another wall-clock time termination condition in minutes. Set it large
 ## enough to avoid undesired early termination.
@@ -123,15 +137,15 @@ exit_duration=30000000
 ## used, there are more tokens per step. Thus we need to increase warmup tokens
 ## to make sure there are enough warmup steps, which is important for training
 ## stability.
-lr_warmup_tokens_in_million=3000
-lr_warmup_tokens=$((${lr_warmup_tokens_in_million} * 1000000))
+# lr_warmup_tokens_in_million=3000
+# lr_warmup_tokens=$((${lr_warmup_tokens_in_million} * 1000000))
 ## Here we changed the LR decay tokens to align with total train tokens, since
 ## related works (e.g., https://arxiv.org/abs/2203.15556) find that setting the
 ## learning rate schedule to match the number of training tokens results in the
 ## best final model quality 
-lr_decay_tokens_in_billion=${train_tokens_in_billion}
-lr_decay_tokens=$((${lr_decay_tokens_in_billion} * 1000000000))
-lr_decay_style="cosine"
+# lr_decay_tokens_in_billion=${train_tokens_in_billion}
+# lr_decay_tokens=$((${lr_decay_tokens_in_billion} * 1000000000))
+# lr_decay_style="cosine"
 ###############################################################################
 ### Parallelism configs
 ## Model parallelism, 1 is no MP
@@ -139,35 +153,44 @@ lr_decay_style="cosine"
 mp_size=1
 
 ## Sequence parallelism, 1 is no SP
-sp_size=1
+sp_size=${sp_size:-1}
 
 ## Pipeline parallelism. To disable PP, set pp_size to 1 and no_pp to true.
 ## Note that currently both curriculum learning and random-LTD are NOT
 ## compatible with pipeline parallelism.
 pp_size=1
+tp_size=${tp_size:-1}
 no_pp="true"
 
 ## ZeRO-based data parallelism, stage=0 will disable ZeRO
-zero_stage=1
+zero_stage=${zero_stage:-0}
 
 ## Total number of GPUs. ds_ssh is from DeepSpeed library.
-num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
+num_gpus=$(nvidia-smi -L | wc -l)
+# num_gpus=$(($(ds_ssh nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)-2))
 num_gpus_pernode=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 num_node=$(( ${num_gpus} / ${num_gpus_pernode} ))
 
+if [ ${SIZE:--1} -eq 1 ]; then
+    export CUDA_VISIBLE_DEVICES=0
+    num_gpus=1
+    num_gpus_pernode=1
+    num_node=1
+fi
+
 ## Data parallel size.
-dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} / ${sp_size} ))
+dp_size=$(( ${num_gpus} / ${pp_size} / ${mp_size} / ${sp_size} / ${tp_size}))
+# train_samples=$(($seq_len * 25 * $dp_size)) ## commented og train_samples
 
 ## Micro batch size per GPU
 ## Make sure that batch_size <= global_batch_size*pp_size*mp_size/num_gpus
 ## Reduce it manually if GPU OOM
-# batch_size=$(( ${global_batch_size} / ${dp_size} ))
-batch_size=1
+batch_size=$((${global_batch_size} / ${dp_size}))
 
 ###############################################################################
 ### Misc configs
 log_interval=10
-eval_iters=10
+eval_iters=0
 eval_interval=100
 # num_save controls how frequent to save checkpoint. num_save=20 means that a
 # checkpoint will be saved every 5% of training. For longer training you would
@@ -259,11 +282,9 @@ megatron_options=" \
     --override-opt_param-scheduler \
     --adam-beta1 0.9 \
     --adam-beta2 0.95 \
-    --tensor-model-parallel-size 1 \
+    --tensor-model-parallel-size ${tp_size} \
     --ds-sequence-parallel-size ${sp_size} \
     --init-method-std ${init_std} \
-    --lr-decay-tokens ${lr_decay_tokens} \
-    --lr-warmup-tokens ${lr_warmup_tokens} \
     --micro-batch-size ${batch_size} \
     --exit-duration-in-mins ${exit_duration} \
     --global-batch-size ${global_batch_size} \
@@ -273,10 +294,8 @@ megatron_options=" \
     --seq-length ${seq_len} \
     --max-position-embeddings ${seq_len} \
     --train-tokens ${train_tokens} \
-    --train-samples ${train_samples} \
     --lr ${lr} \
     --min-lr ${min_lr} \
-    --lr-decay-style ${lr_decay_style} \
     --split 949,50,1 \
     --log-interval ${log_interval} \
     --eval-interval ${eval_interval} \
@@ -286,12 +305,12 @@ megatron_options=" \
     --clip-grad 1.0 \
     --hysteresis 2 \
     --num-workers ${num_workers} \
+    --train-samples ${train_samples} \
     --fp16 \
     --seed ${seed} \
     --load ${checkpoint_path} \
     --save ${checkpoint_path} \
     --no-async-tensor-model-parallel-allreduce \
-    --use-flash-attn-triton \
     --tensorboard-queue-size 1 \
     --log-timers-to-tensorboard \
     --log-batch-size-to-tensorboard \
@@ -301,9 +320,14 @@ megatron_options=" \
     --no-bias-dropout-fusion \
     --accumulate-allreduce-grads-in-fp32 \
     --log-validation-ppl-to-tensorboard \
-    --tensorboard-dir ${tensorboard_path}"
+    --tensorboard-dir ${tensorboard_path} \
+    --use-flash-attn-v2"
 
-export DEBUG_FNAME="None"
+    # --lr-decay-tokens ${lr_decay_tokens} \
+    # --lr-warmup-tokens ${lr_warmup_tokens} \
+    # --lr-decay-style ${lr_decay_style} \
+    # --use-flash-attn-triton \
+# export DEBUG_FNAME="None"
 
 if [ "${activation_checkpoint}" = "true" ]; then
 megatron_options="${megatron_options} \
@@ -312,7 +336,8 @@ fi
 
 if [ "${log_optimizer_state}" = "true" ]; then
 megatron_options="${megatron_options} \
-    --log-optimizer-states-to-tensorboard"
+    --log-optimizer-states-to-tensorboard
+    --wandb-project PolarisLLM-Test"
 fi
 
 config_json="ds_config_gbs${global_batch_size}_mbs${batch_size}_log${log_interval}_zero${zero_stage}.json"

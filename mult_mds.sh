@@ -1,9 +1,8 @@
-export NEWDS=1 ## TODO: parse Deepspeed version to deprecate this flag. 
+# export NEWDS=1 ## TODO: parse Deepspeed version to deprecate this flag. 
 WORKING_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
 LOGDIR=$WORKING_DIR/logs
 PYSCRIPT=$WORKING_DIR/mds_launch.sh
-DATA_PATH_LOG_PREFIX=$WORKING_DIR/logs
-
+mkdir -p $LOGDIR
 
 ################################ ARGUMENTS ################################
 # USP_ulysses=1, SP=
@@ -39,29 +38,32 @@ export GLOBAL_MEAN_POOLING=1
 # export WANDB_MODE=disabled
 # export CUDA_DEVICE_MAX_CONNECTIONS=1 ## TODO: What is this??
 export drop_last_batch_with_GBS=1
-# export PROFILE=1
+export PROFILE=1
+MP=4 ## using DP=3, SP=4
 # ZE_AFFINITY_MASK=0,1,2,3 
 
 
 ################################ EXAMPLE RUNS ################################
 export DATA=CIFAR
-export GBS=128
-SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $PYSCRIPT |& tee $LOGDIR/mds1.log
+export GBS=$((1024 * 12))
+NUM_ITERS=20 POS_ENCODING=1               bash $PYSCRIPT |& tee $LOGDIR/mds1.log
 SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $PYSCRIPT |& tee $LOGDIR/mds2.log
-SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $PYSCRIPT |& tee $LOGDIR/mds3.log
-SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
+SP=$MP   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $PYSCRIPT |& tee $LOGDIR/mds3.log
+SP=$MP   NUM_ITERS=20 FA=1 POS_ENCODING=1 USP_ulysses=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
+# TP=$MP   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
+exit 1
 
 export GBS=2048
 SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds4.log
 SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds5.log
-SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds6.log
-TP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds_TP.log ## Almost matching. Is it expected and good enough?
+SP=$MP   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds6.log
+TP=$MP   NUM_ITERS=20 FA=1 POS_ENCODING=1            bash $PYSCRIPT |& tee $LOGDIR/mds_TP.log ## Almost matching. Is it expected and good enough?
 
 
 export GBS=4096
 # SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 bash $PYSCRIPT |& tee $LOGDIR/mds7.log ## OOM
 SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds8.log
-SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds9.log
+SP=$MP   NUM_ITERS=20 FA=1 POS_ENCODING=1 bash $PYSCRIPT |& tee $LOGDIR/mds9.log
 
 # ## ACTIVATION CKPT & ZERO ##
 export DATA=CIFAR

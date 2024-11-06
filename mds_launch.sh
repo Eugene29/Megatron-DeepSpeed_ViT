@@ -1,28 +1,13 @@
 #! /bin/bash
 
 ## ENVIRONMENT
-<<<<<<< HEAD
-echo "Launching Environment."
-# module load conda && conda activate base
-# . ~/venv/stable_ds15.1/bin/activate
-# . ~/venv/stable/bin/activate ##USER: change env accordingly
-## deepspeed version missing error workaround
-# cd $HOME/DeepSpeed;
-# python -c "import deepspeed; deepspeed.__version__"
-# cd ..
-
-## DATA_FILEPATHS CONSUMED
-# export DATA_PATH_LOG="/home/eku/polaris/logs/data_paths3.log"
-# > $DATA_PATH_LOG ## clear file
-=======
 echo "Launching Megatron Deepspeed VIT."
-. /home/eku/venv/stable_ds15.1/bin/activate ## USER: change env accordingly (env has sam's ezpz repo + deepspeed tag: v0.15.1)
+. /lus/flare/projects/Aurora_deployment/eugene/venv/vit/bin/activate ## USER: change env accordingly (env has sam's ezpz repo + deepspeed tag: v0.15.1)
 
 ## If DATA_PATH_LOG is passed, will record input tensors consumed
 if [[ $DATA_PATH_LOG ]]; then
      > $DATA_PATH_LOG 
 fi
->>>>>>> main
 
 ## PYTHONPATH 
 SCRIPT_DIR=$(dirname $0 | xargs realpath)
@@ -87,7 +72,8 @@ if [ -n "$unifiedSP" ]; then
      CLASSIFIER_ARGS="--use_unifiedSP $CLASSIFIER_ARGS"
 fi
 if [ -n "$FA" ]; then
-     CLASSIFIER_ARGS="--use-flash-attn-v2 $CLASSIFIER_ARGS"
+     CLASSIFIER_ARGS="--use-flash-attn-builder $CLASSIFIER_ARGS"
+     # CLASSIFIER_ARGS="--use-flash-attn-v2 $CLASSIFIER_ARGS"
 fi
 if [ -n "$NUM_CHANNELS" ]; then
      CLASSIFIER_ARGS="--num-channels $NUM_CHANNELS"

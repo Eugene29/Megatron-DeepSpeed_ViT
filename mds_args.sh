@@ -3,17 +3,17 @@
 ## COMMUNICATION
 TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
 NHOSTS=$(wc -l < "${PBS_NODEFILE}")
-NGPU_PER_HOST=4 ## TODO: MAKE THIS AGNOSTIC
-# NGPU_PER_HOST=12
+## TODO: MAKE THIS AGNOSTIC. How to know if I am on aurora or polaris..
+NGPU_PER_HOST=12 
 # NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 
 ## LIMIT GPU NUM (FOR 1-NODE EXPERIMENTS)
 if [ ${SIZE:-"-1"} -eq 1 ]; then
-    CUDA_VISIBLE_DEVICES=0
+    ZE_AFFINITY_MASK=0
     NGPU_PER_HOST=1
     NGPUS=1
 elif [ ${SIZE:-"-1"} -eq 2 ]; then
-    CUDA_VISIBLE_DEVICES=0,1
+    ZE_AFFINITY_MASK=0,1
     NGPU_PER_HOST=2
     NGPUS=2
 fi
@@ -33,7 +33,7 @@ elif [ ${DEBUG:-""} == "DP" ]; then
     # export DEBUG_FNAME=None
     > $DEBUG_FNAME
 fi
-
+ 
 export SP=${SP:-1}
 export PP=${PP:-1}
 export TP=${TP:-1}
@@ -56,7 +56,7 @@ DP=$(($NGPUS / $MP))
 if [[ $GBS ]]; then
     MBS=$(($GBS / $DP))
 elif [[ $MBS ]]; then
-    MBS=$(($MBS * $MP)) ## Maintain GBS
+    MBS=$(($MBS * $MP)) ## Maintain GBS across DP and MP
     GBS=$(($MBS * $DP)) 
 else
     printf "\nERROR: you need to pass in either MBS or GBS\n"; exit 1

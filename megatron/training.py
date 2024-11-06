@@ -805,7 +805,7 @@ def train_step(forward_step_func, data_iterator,
                 grad = deepspeed.utils.safe_get_full_grad(param)
                 f.write(f"\nname: {name}, gradients (after step): {grad}, weights (after step): {param}")
                 after_weights.append(param)
-            max_memory = torch.cuda.max_memory_allocated()
+            max_memory = torch.xpu.max_memory_allocated()
             f.write(f"\nmax_memory: {max_memory / (1024 ** 3)}")
         
         raise KeyboardInterrupt("Ran one batch of toy-dataset")
@@ -1317,7 +1317,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             # output = p.key_averages().table(sort_by="self_cuda_time_total", row_limit=10)
             log_dir = "./trace_vit/"
             os.makedirs(log_dir, exist_ok=True)
-            rank = torch.cuda.current_device()
+            rank = torch.distributed.get_rank()
             WS = torch.distributed.get_world_size()
             FA = 'FA_' if 'FA' in os.environ else ""
             SP = "SP" + os.environ["SP"] + "_"
@@ -1339,7 +1339,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             else:
                 packed = ""
 
-            if torch.distributed.get_rank() == 0:
+            if rank == 0:
                 p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
 
         print_rank_0(f"PROFILING...")
@@ -1568,7 +1568,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             p.step()
 
         step_time = time.time() - strt
-        max_memory_used = torch.cuda.max_memory_allocated() / (1024**3)
+        max_memory_used = torch.xpu.max_memory_allocated() / (1024**3)
         ## TODO: Why is it that we cannot get close to 40 GB of memory usage? 
         # dev = deepspeed.accelerator.get_accelerator().current_device()
         # memory_tensor = torch.tensor(max_memory_used, device=dev)

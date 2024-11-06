@@ -194,10 +194,9 @@ class VitBackbone(MegatronModule):
                     torch.randn(1, CLASS_TOKEN_LENGTH, self.hidden_size)
                 )
                 torch.nn.init.zeros_(self.cls_token)
-            dev = get_accelerator()
+            dev = get_accelerator().current_device()
             ## TODO: make device= dev instantiation
-            # self.position_ids = torch.arange(self.seq_length, device=dev).expand(1, -1)
-            self.position_ids = torch.arange(self.seq_length).expand(1, -1).xpu()
+            self.position_ids = torch.arange(self.seq_length, device=dev).expand(1, -1)
             
             # Linear encoder
             self.linear_encoder = torch.nn.Linear(

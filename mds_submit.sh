@@ -1,10 +1,7 @@
 #! /bin/bash -l
 
-
-# Training and validation paths should each point to a folder where each
-# sub-folder contains a collection of images in jpg or png format
-# e.g. If using imagenet, one train image might be, train_data/n01688243/n01688243_11301.JPEG
-DIR=$(dirname $0)
+### Helper script for mds_qsub.sh
+DIR=$(dirname $0) ## $0 works as intended since we are not in job env yet.
 
 ## ARGUMENTS (-DEFAULTS)
 NUM_NODES=${NUM_NODES:-1}
@@ -38,4 +35,4 @@ qsub \
   -l walltime="${DURATION}" \
   -l filesystems=eagle:home:grand \
    ${DIR}/mds_launch.sh |& tee job_logs/${RUN_NAME}.log
-echo "JOB IS SUBMITTED!"
+echo "JOB IS SUBMITTED!" ## Q. I don't remember seeing these being printed?

@@ -12,8 +12,11 @@ from megatron.core.parallel_state import (
     get_sequence_parallel_src_rank,
 )
 from deepspeed.accelerator import get_accelerator
-
-_MAX_DATA_DIM = 5
+import os
+if "VIT3D" not in os.environ:
+    _MAX_DATA_DIM = 5
+else:
+    _MAX_DATA_DIM = 6
 
 
 def _check_data_types(keys, data, target_dtype):
@@ -39,7 +42,7 @@ def _build_key_size_numel_dictionaries(keys, data, group=None, rank=-1, src_rank
     if rank == 0:
         offset = 0
         for key in keys:
-            assert data[key].dim() < max_dim, 'you should increase MAX_DATA_DIM'
+            assert data[key].dim() < max_dim, f'you should increase MAX_DATA_DIM {max_dim}'
             size = data[key].size()
             for i, s in enumerate(size):
                 sizes[i + offset] = s

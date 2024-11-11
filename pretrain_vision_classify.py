@@ -98,8 +98,12 @@ def get_batch(data_iterator):
 
         if dp_src_rank == 0: ## only need data in first dp group as it will get broadcasted to other dp group. 
             ## Generate TOY DATASET on rank0
+            if "VIT3D" not in os.environ:
+                full_img = torch.randn(b, c, h, w, dtype=img_dtype, device=dev) ## B, S
+            else:
+                d = int(os.environ["IMG_D"])
+                full_img = torch.randn(b, c, h, w, d, dtype=img_dtype, device=dev)
             num_classes = int(os.environ["NUM_CLASSES"])
-            full_img = torch.randn(b, c, h, w, dtype=img_dtype, device=dev) ## B, S
             full_label = torch.randint(num_classes, (b,), dtype=label_dtype, device=dev) ## B, S
 
             ## Partition data to replicate DP mechanism. 

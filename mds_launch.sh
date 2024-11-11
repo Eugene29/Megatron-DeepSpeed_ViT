@@ -78,7 +78,7 @@ if [ -n "$FA" ]; then
      CLASSIFIER_ARGS="--use-flash-attn-v2 $CLASSIFIER_ARGS"
 fi
 if [ -n "$NUM_CHANNELS" ]; then
-     CLASSIFIER_ARGS="--num-channels $NUM_CHANNELS"
+     CLASSIFIER_ARGS="--num-channels $NUM_CHANNELS $CLASSIFIER_ARGS"
 fi
 
 

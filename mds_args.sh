@@ -112,12 +112,19 @@ elif [[ $DATA == 'TOY' ]]; then
 
     IMG_W=$(($PATCH_DIM * $factor))
     IMG_H=$(($PATCH_DIM * $factor))
+    IMG_D=$(($PATCH_DIM * $factor)) ## image depth for 3dvit.
+    NUM_CHANNELS=1 ## 1 for 3dvit, default=3 for 2dvit.
     LR_WARMUP_SAMPLES=0
 
     ## DATA
     DS_CONFIG_FNAME="TOY.json"
 else
     echo "Dataset not implemented"
+    exit 1
+fi
+
+if [[ $VIT3D ]] && [[ $DATA -ne "TOY" ]]; then
+    echo "Currently 3dvit is only supported with Toy dataset"
     exit 1
 fi
 
@@ -174,34 +181,48 @@ EOF
 
 ## MODEL CONFIGURATION ##
 
-## ViT-Tiny (10M)
-# NLAYERS=6
-# HSIZE=512
-# FFN_HSIZE=512
-# NUM_HEADS=8
-
-# ## VIT-Large (307M)
-# NLAYERS=24
-# HSIZE=1024
-# FFN_HSIZE=4096
-# NUM_HEADS=16
-
-## VIT-Large (632M)
-NLAYERS=32
-HSIZE=1280
-FFN_HSIZE=5120
-NUM_HEADS=16
-
-## VIT-2B (1.6B in VIT? Why doesn't it fit?)
-# NLAYERS=10
-# NLAYERS=5
-# HSIZE=4096
-# FFN_HSIZE=11008
-# HSIZE=16384
-# FFN_HSIZE=16384
-# NUM_HEADS=32
-# ATT_DROPOUT=0.1
-# H_DROPOUT=0.1
+VIT=${VIT:-"Large"}
+echo Using VIT-$VIT
+if [[ $VIT == "Tiny" ]]; then
+    ## ViT-Tiny (10M)
+    NLAYERS=6
+    HSIZE=512
+    FFN_HSIZE=512
+    NUM_HEADS=8
+elif [[ $VIT == "Base" ]]; then
+    ## ViT-Base (86M)
+    NLAYERS=12
+    HSIZE=768
+    FFN_HSIZE=3072
+    NUM_HEADS=12
+elif [[ $VIT == "Large" ]]; then
+    ## VIT-Large (307M)
+    NLAYERS=24
+    HSIZE=1024
+    FFN_HSIZE=4096
+    NUM_HEADS=16
+elif [[ $VIT == "Huge" ]]; then
+    ## VIT-Huge (632M)
+    NLAYERS=32
+    HSIZE=1280
+    FFN_HSIZE=5120
+    NUM_HEADS=16
+elif [[ $VIT == "2B" ]]; then
+    ## VIT-2B (1.6B in VIT? Why doesn't it fit?)
+    echo TBD
+    exit 1
+    # NLAYERS=10
+    # HSIZE=4096
+    # FFN_HSIZE=11008
+    # HSIZE=16384
+    # FFN_HSIZE=16384
+    # NUM_HEADS=32
+    # ATT_DROPOUT=0.1
+    # H_DROPOUT=0.1
+else
+    echo "VIT not implemented"
+    exit 1
+fi
 
 ## EXPORT
 export TRAIN_SAMPLES="${TRAIN_SAMPLES:-5000}"
@@ -215,6 +236,7 @@ export MBS=$MBS
 export NUM_CLASSES=$NUM_CLASSES
 export IMG_H="${IMG_H}"
 export IMG_W="${IMG_W}"
+export IMG_D="${IMG_D}"
 export PATCH_DIM="${PATCH_DIM}"
 export LR="${LR:-1e-4}"
 export MIN_LR="${MIN_LR:-0.00001}"
@@ -229,11 +251,16 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # [rank0]: ncclUnhandledCudaError: Call to CUDA function failed.
 # export NCCL_DEBUG=INFO
 
-if [[ $GLOBAL_MEAN_POOLING ]]; then
-    export SEQ_LEN=$(echo "${IMG_W} * ${IMG_W} / ${PATCH_DIM}^2" | bc)  
+if [[ $VIT3D ]]; then
+    SEQ_LEN=$((IMG_H * IMG_W * IMG_D / PATCH_DIM**3))  
 else
-    export SEQ_LEN=$(echo "${IMG_W} * ${IMG_W} / ${PATCH_DIM}^2 + 1" | bc)  ## TODO: update when you add the padded tokens features. 
+    SEQ_LEN=$((IMG_H * IMG_W / PATCH_DIM**2))  
+fi
+if [[ -z $GLOBAL_MEAN_POOLING ]]; then
+    SEQ_LEN=$((SEQ_LEN + 1)) ## Count clf token in seq length. 
 fi 
+export SEQ_LEN=$SEQ_LEN
+## TODO: update seq_len when you add the padded tokens features. 
 echo "Sequence length: ${SEQ_LEN}"
 
 ## LOGGING

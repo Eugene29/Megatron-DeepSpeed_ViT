@@ -172,13 +172,21 @@ class VitBackbone(MegatronModule):
 
         assert self.img_h % self.patch_dim == 0, f"img_h:, {self.img_h}, patch_dim: {self.patch_dim}"
         assert self.img_w % self.patch_dim == 0, f"img_w:, {self.img_w}, patch_dim: {self.patch_dim}"
-        self.num_patches_per_dim_h = self.img_h // self.patch_dim
-        self.num_patches_per_dim_w = self.img_w // self.patch_dim
-        self.num_patches = self.num_patches_per_dim_h * self.num_patches_per_dim_w
-        self.seq_length = self.num_patches + (CLASS_TOKEN_LENGTH if self.class_token else 0)
+
         self.flatten_dim = self.patch_dim * self.patch_dim * args.num_channels
         self.input_tensor = None
         self.position_ids = None
+
+        if "VIT3D" not in os.environ:
+            self.num_patches_per_dim_h = self.img_h // self.patch_dim
+            self.num_patches_per_dim_w = self.img_w // self.patch_dim
+            self.num_patches = self.num_patches_per_dim_h * self.num_patches_per_dim_w
+            self.seq_length = self.num_patches + (CLASS_TOKEN_LENGTH if self.class_token else 0) ## why are you recalcualting seq length if it is required as env variable? 
+        else:
+            img_d = int(os.environ["IMG_D"]) ## image depth
+            assert img_d % self.patch_dim == 0, f"img_d:, {img_d}, patch_dim: {self.patch_dim}"
+            self.flatten_dim = self.patch_dim * self.patch_dim * self.patch_dim * args.num_channels
+            self.seq_length = int(os.environ["SEQ_LEN"])
 
         if self.ds_sequence_parallel:
             sp = mpu.get_sequence_parallel_world_size()
@@ -274,12 +282,21 @@ class VitBackbone(MegatronModule):
 
     def forward(self, input):
         if self.pre_process:
-            rearranged_input = einops.rearrange(
-                input,
-                "b c (h p1) (w p2) -> b (h w) (p1 p2 c)",
-                p1=self.patch_dim,
-                p2=self.patch_dim,
-            )
+            if "VIT3D" not in os.environ:
+                rearranged_input = einops.rearrange(
+                    input,
+                    "b c (h p1) (w p2) -> b (h w) (p1 p2 c)",
+                    p1=self.patch_dim,
+                    p2=self.patch_dim,
+                )
+            else:
+                rearranged_input = einops.rearrange(
+                    input,
+                    "b c (h p1) (w p2) (d p3) -> b (h w d) (p1 p2 p3 c)",
+                    p1=self.patch_dim,
+                    p2=self.patch_dim,
+                    p3=self.patch_dim,
+                )
 
             if self.ds_sequence_parallel:
                 sp = mpu.get_sequence_parallel_world_size()

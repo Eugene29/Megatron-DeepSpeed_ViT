@@ -1,7 +1,13 @@
 ## Welcome to ALCF ViT repo, maintained by Eugene Ku
 
-## 1. Environment
-  Base (Polaris) environment + DeepSpeed(15.1 or higher?) + ezpz (sam's library)
+## Clone & Init Submodule:
+```
+  git clone --recursive https://github.com/Eugene29/Megatron-DeepSpeed_ViT.git ## Clone module + submodule
+  git submodule update --init --recursive ## Init & Update submodule
+```
+
+## Environment
+  Base (Polaris) environment + DeepSpeed(15.1 or higher(?)) + ezpz (sam's library)
 
 - ### Installation
   1. ezpz:
@@ -17,10 +23,10 @@
 - ### Modify `mds_args.sh`
   - Change env activation in `mds_args.sh`
 
-## 2. Functionality
-  To check available functionalities and how to use them, checkout the documentation in `mult_mds.sh`
+## Functionality
+  To know about all available functionalities and how to use them, checkout the documentation in `mult_mds.sh`
   
-## 3. Script
+## Script
   For consecutive runs one can:
   ```
   bash mult_mds.sh
@@ -30,3 +36,6 @@
   ```
   bash mult_qsub.sh
   ```
+
+## Note:
+  - Most comments written by me are flagged with ## instead of #

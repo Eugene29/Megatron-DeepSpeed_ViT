@@ -16,6 +16,10 @@ pip install .
 pip install deepspeed==0.15.1
 ```
 
+Change env activation in `mds_args.sh`
+
+## Functionality
+To check available functionalities and how to use them, checkout the documentation in `mult_mds.sh`
 ## Script
 For consecutive runs one can:
 ```

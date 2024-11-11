@@ -41,7 +41,7 @@ mkdir -p $LOGDIR
 
 ################################ Global ARGUMENTS ################################
 export GLOBAL_MEAN_POOLING=1
-# export WANDB_MODE=disabled
+export WANDB_MODE=disabled
 # export CUDA_DEVICE_MAX_CONNECTIONS=1 ## TODO: What is this??
 export drop_last_batch_with_GBS=1
 # export PROFILE=1

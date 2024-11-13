@@ -659,7 +659,7 @@ class ParallelAttention(MegatronModule):
                 self.dist_attn = LongContextAttention(ring_impl_type="basic")
             else:
                 assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
-                assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0
+                # assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0 ## No longer needed with Deepspeed udpate
                 self.dist_attn = DistributedAttention(
                     local_attn, 
                     parallel_state.get_sequence_parallel_group(), ## group that needs to communicate together. (if 1, then it communicates with other devices in 1)

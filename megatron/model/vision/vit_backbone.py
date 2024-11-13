@@ -188,10 +188,10 @@ class VitBackbone(MegatronModule):
             self.flatten_dim = self.patch_dim * self.patch_dim * self.patch_dim * args.num_channels
             self.seq_length = int(os.environ["SEQ_LEN"])
 
-        if self.ds_sequence_parallel:
-            sp = mpu.get_sequence_parallel_world_size()
-            assert self.seq_length % sp == 0
-            assert args.num_attention_heads % sp == 0, "Num head is the max sp degree for Ulysses"
+        # if self.ds_sequence_parallel:
+            # sp = mpu.get_sequence_parallel_world_size()
+            # assert self.seq_length % sp == 0
+            # assert args.num_attention_heads % sp == 0, "Num head is the max sp degree for Ulysses"
 
 
         if self.pre_process:
@@ -240,6 +240,10 @@ class VitBackbone(MegatronModule):
                 sub_seq_start = sp_rank * sub_seq_length
                 sub_seq_end = (sp_rank + 1) * sub_seq_length
 
+                # is_last_sp_rank = sp_rank == sp-1
+                # if is_last_sp_rank:
+                #     self.position_embeddings = pos_encoding[sub_seq_start:, :] ##
+                # else:
                 self.position_embeddings = pos_encoding[sub_seq_start:sub_seq_end, :] ## s, h ?
             else:
                 self.position_embeddings = torch.nn.Embedding(
@@ -307,6 +311,10 @@ class VitBackbone(MegatronModule):
                 sub_seq_start = sp_rank * sub_seq_length
                 sub_seq_end = (sp_rank + 1) * sub_seq_length
 
+                # is_last_sp_rank = sp_rank == sp-1
+                # if is_last_sp_rank:
+                #     rearranged_input = rearranged_input[:, sub_seq_start:, :] ## b, s, h
+                # else:
                 rearranged_input = rearranged_input[:, sub_seq_start:sub_seq_end, :] ## b, s, h
                 ## Q. Don't we need to use sequence_data_parallel instead of sequence_parallel_rank?
                 ## > No, sequence_data_parallel_rank is the rank that is unique across both sp and dp groups. 

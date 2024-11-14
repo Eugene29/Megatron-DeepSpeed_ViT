@@ -61,6 +61,7 @@ from deepspeed.runtime.data_pipeline.data_routing.helper import convert_to_rando
 from megatron.model.transformer import ParallelTransformerLayer
 
 from deepspeed import comm as dist
+from megatron.vit_utils import get_gpu_memory
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
@@ -1320,10 +1321,13 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             WS = torch.distributed.get_world_size()
             FA = 'FA_' if 'FA' in os.environ else ""
             SP = "SP" + os.environ["SP"] + "_"
-            TP = "TP" + os.environ["TP"] + "_"
+            if "TPSP" in os.environ:
+                TP = "TP-SP" + os.environ["TP"] + "_"
+            else:
+                TP = "TP" + os.environ["TP"] + "_"
             VIT = os.environ["VIT"] + "_"
             VIT3D = "3D_" if "VIT3D" in os.environ else ""
-            IMG = os.environ["IMG_H"] + "_"
+            IMG = "IMG" + os.environ["IMG_H"] + "_"
             ZERO = "ZERO" + os.environ["ZERO"] + "_"
             ACT = "ACT_" if "ACT_CKPT" in os.environ else ""
             DATA = os.environ["DATA"]
@@ -1574,21 +1578,44 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             p.step()
 
         step_time = time.time() - strt
-        max_memory_used = torch.cuda.max_memory_allocated() / (1024**3)
+        # max_memory_used = torch.cuda.max_memory_allocated() / (1024**3)
         ## TODO: Why is it that we cannot get close to 40 GB of memory usage? 
         # dev = deepspeed.accelerator.get_accelerator().current_device()
         # memory_tensor = torch.tensor(max_memory_used, device=dev)
         # print(f"memory_tensor: {memory_tensor}")
         # dist.all_reduce(memory_tensor, op=dist.ReduceOp.MAX)
-        memory_tensor = max_memory_used
+        # memory_tensor = max_memory_used
         samples_per_sec = global_batch_size / step_time
-        print_rank_0(f"iteration:{iteration} \t"
-                        f"time:{step_time:.2f} \t"
-                        f"LLM_TFLOPS:{llm_tot_Tflops / step_time:.2f} \t"
-                        f"TFLOPS:{tot_Tflops / step_time:.2f} \t"
-                        f"Samples/Sec:{samples_per_sec:.2f} \t"
-                        f"Max_memory:{memory_tensor:.2f}" )
+        Tflops_per_gpu = tot_Tflops / args.world_size
+        rank0_mem_fpt = int(get_gpu_memory()[0]) / 1024
+        log_dict = {
+            "iteration": iteration,
+            "time": step_time,
+            "LLM_TFLOPS": llm_tot_Tflops / step_time,
+            "TFLOPS": tot_Tflops / step_time,
+            "TFLOPS_per_gpu": Tflops_per_gpu / step_time,
+            "samples_per_sec": samples_per_sec,
+            "memory_fpt(GiB)": rank0_mem_fpt,
+        }
+        log_dict = {k:round(v, 2) for k, v in log_dict.items()}
 
+        if torch.distributed.get_rank() == 0:
+            for k,v in log_dict.items(): ## Store the maximum and log it at the end of training.
+                prev_v = getattr(args, k, None)
+                if prev_v is None or prev_v < v:
+                    setattr(args, k, v)
+
+        print_rank_0(f"iteration:{log_dict['iteration']} \t"
+                     f"time:{log_dict['time']} \t"
+                     f"LLM_TFLOPS:{log_dict['LLM_TFLOPS']} \t"
+                     f"TFLOPS:{log_dict['TFLOPS']} \t"
+                     f"TFLOPS_per_gpu:{log_dict['TFLOPS_per_gpu']} \t"
+                     f"Samples/Sec:{log_dict['samples_per_sec']} \t"
+                     f"memory fpt (GiB):{log_dict['memory_fpt(GiB)']}")
+        
+        # if is_rank_0:
+        #     print(f"hello: rank {torch.distributed.get_rank()}")
+        
     if profile_enabled:
         p.stop()
 

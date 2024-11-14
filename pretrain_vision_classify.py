@@ -234,7 +234,9 @@ if __name__ == "__main__":
     # from torchvision import set_image_backend
     # if "ACCIMAGE" in os.environ:
     #     set_image_backend("accimage")
-
+    import time
+    from megatron import get_wandb_writer
+    train_strt = time.time()
     pretrain(
         train_valid_test_datasets_provider,
         model_provider,
@@ -242,5 +244,14 @@ if __name__ == "__main__":
         forward_step,
         args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
     )
+    print_rank_0(f"tot train time: {time.time() - train_strt}")
+
+    if torch.distributed.get_rank() == 0:
+        args = get_args()
+        log_keys = [ "iteration", "time", "LLM_TFLOPS", "TFLOPS", "TFLOPS_per_gpu", "samples_per_sec", "memory_fpt(GiB)" ]
+        log_dict = {k:getattr(args, k) for k in log_keys}
+        wandb_writer = get_wandb_writer()
+        wandb_writer.log(log_dict, step=args.logger_iteration)
+
     print_rank_0("Pretrain completed.")
     exit()

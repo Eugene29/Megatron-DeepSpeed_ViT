@@ -170,7 +170,28 @@ def _set_wandb_writer(args):
     from datetime import datetime
     import pytz
     ct = pytz.timezone('America/Chicago')
-    args.wandb_exp_name = datetime.now(ct).strftime("%Y-%m-%d_%I:%M_%p")
+    WS = f"WS{torch.distributed.get_world_size()}"
+    if "TPSP" in os.environ:
+        TP = f"TP-SP{os.environ['TP']}_"
+    else:
+        TP = f"TP{os.environ['TP']}_"
+    # VIT = os.environ["VIT"] + "_"
+    # VIT3D = "3D_" if "VIT3D" in os.environ else ""
+    IMG = "IMG" + os.environ["IMG_H"] + "_"
+    ZERO = "ZERO" + os.environ["ZERO"] + "_"
+    ACT = "ACT_" if "ACT_CKPT" in os.environ else ""
+    SP = os.environ["SP"]
+    if "USP_ulysses" in os.environ:
+        framework = "USP_ulysses"
+    elif "USP_ring" in os.environ:
+        framework = "USP_ring"
+    elif "USP_hybrid" in os.environ:
+        framework = "USP_hybrid"
+    else:
+        framework = "DS_"
+    framework = framework + "_SP" + os.environ["SP"] + "_"
+    exp_name = WS + SP + TP + ZERO + ACT + IMG ## One can infer DP
+    args.wandb_exp_name = exp_name + datetime.now(ct).strftime("%Y-%m-%d_%I:%M_%p")
 
     ## Using args.world_size - 1 causes it to hang. Interesting case.. I wonder why
     # if args.rank == (args.world_size - 1):

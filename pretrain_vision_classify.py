@@ -3,6 +3,7 @@
 """Pretrain VIT"""
 from mpi4py import MPI
 import torch.distributed as dist
+import torch.distributed
 comm = MPI.COMM_WORLD
 comm.Barrier()
 
@@ -252,6 +253,10 @@ if __name__ == "__main__":
         log_dict = {k:getattr(args, k) for k in log_keys}
         wandb_writer = get_wandb_writer()
         wandb_writer.log(log_dict, step=args.logger_iteration)
-
+    
+    if torch.distributed.get_rank() == 0:
+        import pprint
+        pprint.pprint(log_dict)
+        
     print_rank_0("Pretrain completed.")
     exit()

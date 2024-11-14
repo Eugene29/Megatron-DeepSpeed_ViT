@@ -170,7 +170,7 @@ def _set_wandb_writer(args):
     from datetime import datetime
     import pytz
     ct = pytz.timezone('America/Chicago')
-    WS = f"WS{torch.distributed.get_world_size()}"
+    WS = f"WS{torch.distributed.get_world_size()}_"
     if "TPSP" in os.environ:
         TP = f"TP-SP{os.environ['TP']}_"
     else:
@@ -180,7 +180,6 @@ def _set_wandb_writer(args):
     IMG = "IMG" + os.environ["IMG_H"] + "_"
     ZERO = "ZERO" + os.environ["ZERO"] + "_"
     ACT = "ACT_" if "ACT_CKPT" in os.environ else ""
-    SP = os.environ["SP"]
     if "USP_ulysses" in os.environ:
         framework = "USP_ulysses"
     elif "USP_ring" in os.environ:
@@ -189,7 +188,7 @@ def _set_wandb_writer(args):
         framework = "USP_hybrid"
     else:
         framework = "DS_"
-    framework = framework + "_SP" + os.environ["SP"] + "_"
+    SP = framework + "SP" + os.environ["SP"] + "_"
     exp_name = WS + SP + TP + ZERO + ACT + IMG ## One can infer DP
     args.wandb_exp_name = exp_name + datetime.now(ct).strftime("%Y-%m-%d_%I:%M_%p")
 

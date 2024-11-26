@@ -3,6 +3,7 @@
 ## Clone & Init Submodule:
 ```
   git clone --recursive https://github.com/Eugene29/Megatron-DeepSpeed_ViT.git ## Clone module + submodule
+  cd Megatron-DeepSpeed_ViT
   git submodule update --init --recursive ## Init & Update submodule
 ```
 

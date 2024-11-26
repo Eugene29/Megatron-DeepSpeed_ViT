@@ -55,7 +55,7 @@ unset NCCL_NET_GDR_LEVEL
 ################################ EXAMPLE RUNS ################################
 export DATA=CIFAR
 export GBS=1024
-SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds1.log
+# SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds1.log
 SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds2.log
 SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds3.log
 SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 USP_ulysses=1 bash $MAIN_SCRIPT |& tee $LOGDIR/mds4.log

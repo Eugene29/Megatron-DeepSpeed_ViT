@@ -2,6 +2,7 @@
 
 ## ENVIRONMENT
 echo "Launching Megatron Deepspeed VIT."
+TZ="America/Chicago" date ## Q. interesting bash command, the command is after the argument?
 . /home/eku/venv/stable_ds15.1/bin/activate ## USER: change env accordingly (env has sam's ezpz repo + deepspeed tag: v0.15.1)
 
 ## If DATA_PATH_LOG is passed, will record input tensors consumed
@@ -14,6 +15,7 @@ SCRIPT_DIR=$(dirname $0 | xargs realpath)
 cd $SCRIPT_DIR
 PYTHONPATH=$og_PYTHONPATH
 YUNCHANG=$SCRIPT_DIR/long-context-attention ## Custom yunchang (USP)
+YUNCHANG=$SCRIPT_DIR/DeepSpeed ## Temporary DeepSpeed
 PYTHONPATH="$YUNCHANG:$PYTHONPATH"
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Add local megatron path
 
@@ -57,8 +59,6 @@ CLASSIFIER_ARGS="
      --clip-grad 1.0 \
      --no-gradient-accumulation-fusion \
      --num-workers ${NGPUS} \
-     --no-masked-softmax-fusion \
-     --no-bias-dropout-fusion \
      --micro-batch-size ${MBS} \
      --attention-dropout ${ATT_DROPOUT:-0} \
      --hidden-dropout ${H_DROPOUT:-0} \
@@ -67,20 +67,21 @@ CLASSIFIER_ARGS="
      --train-samples ${TRAIN_SAMPLES} \
      --retro-encoder-attention-dropout 0.0 \
      --retro-encoder-hidden-dropout 0.0 \
+     --no-masked-softmax-fusion \
+     --no-bias-dropout-fusion \
 "
-     # --no-async-tensor-model-parallel-allreduce \
 ## TODO: does --no-async-tensor-model-parallel-allreduce \ make things faster? 
 
-if [ -n "$unifiedSP" ]; then
-     CLASSIFIER_ARGS="--use_unifiedSP $CLASSIFIER_ARGS"
-fi
-if [ -n "$FA" ]; then
+if [[ $FA -eq 1 ]]; then
      CLASSIFIER_ARGS="--use-flash-attn-v2 $CLASSIFIER_ARGS"
 fi
-if [ -n "$NUM_CHANNELS" ]; then
+if [[ $NUM_CHANNELS ]]; then
      CLASSIFIER_ARGS="--num-channels $NUM_CHANNELS $CLASSIFIER_ARGS"
 fi
-
+if [[ $TPSP -eq 1 ]]; then
+     export CUDA_DEVICE_MAX_CONNECTIONS=1 ## TODO: What is this??
+     CLASSIFIER_ARGS="--sequence-parallel $CLASSIFIER_ARGS"
+fi
 
 DATA_ARGS="
      --tokenizer-type NullTokenizer \
@@ -101,7 +102,7 @@ DS_ARGS="
      --deepspeed \
      --deepspeed_config=$ds_json
 "
-if [[ $ACT_CKPT ]]; then
+if [[ $ACT_CKPT -eq 1 ]]; then
      DS_ARGS="--deepspeed-activation-checkpointing $DS_ARGS" ## Useless? 
      MEG_ARGS="--checkpoint-activations"
 fi

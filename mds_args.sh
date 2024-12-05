@@ -109,11 +109,14 @@ elif [[ $DATA == 'TOY' ]]; then
     NUM_CLASSES=20
     PATCH_DIM=16
     factor=${factor:-54}
+    NUM_EPOCHS=${NUM_EPOCHS:-500}
+    TRAIN_SIZE=40000 ## Dummy Size
+    TRAIN_SAMPLES=$(($NUM_EPOCHS * $TRAIN_SIZE))
 
     IMG_W=$(($PATCH_DIM * $factor))
     IMG_H=$(($PATCH_DIM * $factor))
-    IMG_D=$(($PATCH_DIM * $factor)) ## image depth for 3dvit.
-    NUM_CHANNELS=1 ## 1 for 3dvit, default=3 for 2dvit.
+    IMG_D=$(($PATCH_DIM * $factor)) ## image depth for 3dvit, not used if 2dvit
+    NUM_CHANNELS=${NUM_CHANNELS:-1} ## 1 for 3dvit, default=3 for 2dvit.
     LR_WARMUP_SAMPLES=0
 
     ## DATA
@@ -181,28 +184,29 @@ EOF
 
 ## MODEL CONFIGURATION ##
 
-VIT=${VIT:-"Large"}
+export VIT=${VIT:-"LARGE"}
 echo Using VIT-$VIT
-if [[ $VIT == "Tiny" ]]; then
-    ## ViT-Tiny (10M)
+if [[ $VIT == "TINY" ]]; then
+    ## ViT-TINY (10M)
     NLAYERS=6
     HSIZE=512
     FFN_HSIZE=512
     NUM_HEADS=8
-elif [[ $VIT == "Base" ]]; then
-    ## ViT-Base (86M)
+    PATCH_DIM=4
+elif [[ $VIT == "BASE" ]]; then
+    ## ViT-BASE (86M)
     NLAYERS=12
     HSIZE=768
     FFN_HSIZE=3072
     NUM_HEADS=12
-elif [[ $VIT == "Large" ]]; then
-    ## VIT-Large (307M)
+elif [[ $VIT == "LARGE" ]]; then
+    ## VIT-LARGE (307M)
     NLAYERS=24
     HSIZE=1024
     FFN_HSIZE=4096
     NUM_HEADS=16
-elif [[ $VIT == "Huge" ]]; then
-    ## VIT-Huge (632M)
+elif [[ $VIT == "HUGE" ]]; then
+    ## VIT-HUGE (632M)
     NLAYERS=32
     HSIZE=1280
     FFN_HSIZE=5120
@@ -234,6 +238,7 @@ export DATA=$DATA
 export GBS=$GBS
 export MBS=$MBS
 export NUM_CLASSES=$NUM_CLASSES
+export NUM_CHANNELS=$NUM_CHANNELS
 export IMG_H="${IMG_H}"
 export IMG_W="${IMG_W}"
 export IMG_D="${IMG_D}"

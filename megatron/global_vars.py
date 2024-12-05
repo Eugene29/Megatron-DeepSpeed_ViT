@@ -181,14 +181,14 @@ def _set_wandb_writer(args):
     ZERO = "ZERO" + os.environ["ZERO"] + "_"
     ACT = "ACT_" if "ACT_CKPT" in os.environ else ""
     if "USP_ulysses" in os.environ:
-        framework = "USP_ulysses"
+        framework = "USPU"
     elif "USP_ring" in os.environ:
-        framework = "USP_ring"
+        framework = "USPR"
     elif "USP_hybrid" in os.environ:
-        framework = "USP_hybrid"
+        framework = "USPH"
     else:
-        framework = "DS_"
-    SP = framework + "SP" + os.environ["SP"] + "_"
+        framework = "SPU"
+    SP = framework + os.environ["SP"] + "_"
     exp_name = WS + SP + TP + ZERO + ACT + IMG ## One can infer DP
     args.wandb_exp_name = exp_name + datetime.now(ct).strftime("%Y-%m-%d_%I:%M_%p")
 

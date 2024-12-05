@@ -1587,7 +1587,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         # memory_tensor = max_memory_used
         samples_per_sec = global_batch_size / step_time
         Tflops_per_gpu = tot_Tflops / args.world_size
-        rank0_mem_fpt = int(get_gpu_memory()[0]) / 1024
+        rank0_mem_fpt = int(get_gpu_memory()[0]) / 1000
         log_dict = {
             "iteration": iteration,
             "time": step_time,

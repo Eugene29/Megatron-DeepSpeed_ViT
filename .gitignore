@@ -21,3 +21,15 @@ logs
 
 # Data folder
 bookcorpus_data/
+
+# custom ignore
+*.json
+*.txt
+*.log
+*.bin
+*.idx
+*.pt
+
+# doesn't work
+*/wandb/ 
+

@@ -30,6 +30,15 @@ bookcorpus_data/
 *.idx
 *.pt
 
-# doesn't work
-*/wandb/ 
+# folders
+wandb/
+examples_deepspeed/
 
+# irrelevant py files
+results_viz.py
+megatron/model/transformer_sams.py
+megatron/varuni_vit_utils.py
+
+# log files
+mds_qsub.sh.*
+FlyKD.*

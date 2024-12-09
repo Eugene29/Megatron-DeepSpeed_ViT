@@ -29,8 +29,9 @@ mkdir -p $LOGDIR
 # ACT_CKPT                                              ## set ACT_CKPT to anything to turn on activation checkpointing
 # VIT3D                                                 ## Switch to 3DVIT. Must use Toy dataset for now. By default, dataset size is [GBS, p*factor, p*factor, p*factor, 1] 
 #                                                          where p=16 (patch size) by default. One can change in mds_args.sh
-# VIT                                                   ## Size of VIT {Tiny, Base, Large, Huge}. Refer to mds_args.sh for their sizes
-
+# VIT                                                   ## Size of VIT {TINY, BASE, LARGE, HUGE}. Refer to mds_args.sh for their sizes
+# TPSP                                                  ## Upgrade from TP to TP-SP
+# LOG_RESULTS                                           ## log results (tflops, mem fpt, samples/sec) in a json file
 
 ################################ CURRENT CONSTRAINTS ################################
 # 1. GLOBAL_MEAN_POOLING is required for SP (for now)
@@ -40,11 +41,11 @@ mkdir -p $LOGDIR
 
 
 ################################ Global ARGUMENTS ################################
-export GLOBAL_MEAN_POOLING=1
+# export GLOBAL_MEAN_POOLING=1
 export WANDB_MODE=disabled
 # export CUDA_DEVICE_MAX_CONNECTIONS=1 ## TODO: What is this??
 export drop_last_batch_with_GBS=1
-# export PROFILE=1
+export PROFILE=1
 
 ## Below is to prevent multi-node hangs on Polaris-cluster
 unset NCCL_COLLNET_ENABLE
@@ -53,16 +54,19 @@ unset NCCL_NET
 unset NCCL_NET_GDR_LEVEL
 
 ################################ EXAMPLE RUNS ################################
-export DATA=CIFAR
-export GBS=1024
-SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds1.log
-SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds2.log
-SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds3.log
-SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 USP_ulysses=1 bash $MAIN_SCRIPT |& tee $LOGDIR/mds4.log
-SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 USP_ring=1    bash $MAIN_SCRIPT |& tee $LOGDIR/mds5.log
-TP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds6.log
+export GBS=4096; export DATA=CIFAR; export VIT=LARGE
+# export GBS=2048;
+# export GBS=2048; export DATA=CIFAR
+# SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds1.log
+# SP=1   NUM_ITERS=100 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds2.log
+SP=4   NUM_ITERS=10 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds3.log
+# SP=1   NUM_ITERS=1000 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds4.log
+# SP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1 USP_ulysses=1 bash $MAIN_SCRIPT |& tee $LOGDIR/mds4.log
+# SP=4   NUM_ITERS=5 FA=1 POS_ENCODING=1 USP_ring=1    bash $MAIN_SCRIPT |& tee $LOGDIR/mds5.log
+# TP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds6.log
+# TP=4   NUM_ITERS=20 FA=1 POS_ENCODING=1  TPSP=1       bash $MAIN_SCRIPT |& tee $LOGDIR/mds7.log
 
-export GBS=2048 ## Node 2 set-up
+# export GBS=2048 ## Node 2 set-up
 # SP=1    FA=1  POS_ENCODING=1              bash $MAIN_SCRIPT |& tee $LOGDIR/mds5.log
 # TP=8    FA=1  POS_ENCODING=1              bash $MAIN_SCRIPT |& tee $LOGDIR/mds_TP.log ## TP is almost matching. Is it expected and good enough?
 # SP=8    FA=1  POS_ENCODING=1              bash $MAIN_SCRIPT |& tee $LOGDIR/mds6.log
@@ -83,14 +87,50 @@ export GBS=2048 ## Node 2 set-up
 # SP=1   NUM_ITERS=20 FA=1 POS_ENCODING=1 ACT_CKPT=1 ZERO=3 bash $MAIN_SCRIPT |& tee $LOGDIR/mds14.log ## Loss differs than Zero=0 and Memory increased from iter 15
 
 ################################################################ Benchmark ################################################################
-export DATA=TOY; export factor=128 ## Seq_len=128^2, Img_dim=(2048^2, 3), Patch_dim=16
-export PROFILE=1
-export GBS=2; export SIZE=1
-# SP=1      FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds1.log
-# SP=1      FA=1  POS_ENCODING=1  ACT_CKPT=1             bash $MAIN_SCRIPT |& tee $LOGDIR/mds2.log
+# export DATA=TOY; ## Seq_len=128^2, Img_dim=(2048^2, 3), Patch_dim=16
+# export NUM_ITERS=5; 
+# export NUM_CHANNELS=1 ## Q. how come changing number of channels can incur higher memory? 
+# export FA=1
+# export POS_ENCODING=1
+# export PROFILE=1
+# export LOG_RESULTS=1
 
-export GBS=4; export SIZE=2
-# SP=1      FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds3.log
+# experiment () {
+#     ## Size: Num GPU
+#     ## GBS: GBS per GPU. Actual GBS := GBS * SIZE
+#     ## factor: Image Size = 
+#     SIZE=$1
+#     GBS=$(($2 * SIZE)) ## Weak Scaling
+#     factor=$3
+#     export SIZE=$SIZE
+#     export GBS=$GBS
+#     export factor=$factor
+    
+#     SP=1                     method="DP"   bash $MAIN_SCRIPT  |&  tee  $LOGDIR/3dvit_DP${SIZE}_factor${factor}.log    ## SP
+#     if [[ $SIZE -ne 1 ]]; then
+#         TP=$SIZE                 method="TP"   bash $MAIN_SCRIPT  |&  tee  $LOGDIR/3dvit_TP${SIZE}_factor${factor}.log    ## TP
+#         TP=$SIZE  TPSP=1         method="TPSP" bash $MAIN_SCRIPT  |&  tee  $LOGDIR/3dvit_TPSP${SIZE}_factor${factor}.log  ## TP-SP
+#         SP=$SIZE                 method="SPU"  bash $MAIN_SCRIPT  |&  tee  $LOGDIR/3dvit_SPU${SIZE}_factor${factor}.log   ## SP
+#         SP=$SIZE  USP_ulysses=1  method="USPU" bash $MAIN_SCRIPT  |&  tee  $LOGDIR/3dvit_USPU${SIZE}_factor${factor}.log  ## USP-Uly
+#         SP=$SIZE  USP_ring=1     method="USPR" bash $MAIN_SCRIPT  |&  tee  $LOGDIR/3dvit_USPR${SIZE}_factor${factor}.log  ## USP-Ring
+#     fi
+# }
+
+# for SIZE in 8; do
+#     ##           Size  GBS   factor
+#     experiment  $SIZE  1024  8
+#     experiment  $SIZE  256   16
+#     experiment  $SIZE  64    32
+#     experiment  $SIZE  16    64
+#     experiment  $SIZE  4     128
+#     experiment  $SIZE  1     256
+# done
+
+# export SIZE=2
+# export GBS=$((4 * SIZE)); export factor=128;
+
+# export GBS=4; export SIZE=2
+# factor=9999 SP=1      FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds3.log
 # SP=1      FA=1  POS_ENCODING=1                 ZERO=2  bash $MAIN_SCRIPT |& tee $LOGDIR/mds4.log
 # SP=$SIZE  FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds5.log
 # SP=$SIZE  FA=1  POS_ENCODING=1  USP_ulysses=1          bash $MAIN_SCRIPT |& tee $LOGDIR/mds6.log
@@ -98,16 +138,16 @@ export GBS=4; export SIZE=2
 # SP=$SIZE  FA=1  POS_ENCODING=1  USP_ulysses=1  ZERO=2  bash $MAIN_SCRIPT |& tee $LOGDIR/mds8.log
 # TP=$SIZE  FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds9.log
 
-export GBS=8; export SIZE=4
+# export GBS=8; export SIZE=4
 # SP=1      FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds10.log
 # SP=1      FA=1  POS_ENCODING=1                 ZERO=2  bash $MAIN_SCRIPT |& tee $LOGDIR/mds11.log
 # SP=$SIZE  FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds12.log
-# SP=$SIZE  FA=1  POS_ENCODING=1  USP_ulysses=1          bash $MAIN_SCRIPT |& tee $LOGDIR/mds13.log
+# SP=$SIZE  FA=1  POS_ENCODING=1  USP_hybrid=1  ZERO=2        bash $MAIN_SCRIPT |& tee $LOGDIR/mds13.log
 # SP=$SIZE  FA=1  POS_ENCODING=1  USP_ring=1             bash $MAIN_SCRIPT |& tee $LOGDIR/mds14.log
 # SP=$SIZE  FA=1  POS_ENCODING=1  USP_ulysses=1  ZERO=2  bash $MAIN_SCRIPT |& tee $LOGDIR/mds15.log
 # TP=$SIZE  FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds16.log
 
-export GBS=16; export SIZE=8
+# export GBS=16; export SIZE=8
 # SP=1      FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds17.log
 # SP=1      FA=1  POS_ENCODING=1                 ZERO=2  bash $MAIN_SCRIPT |& tee $LOGDIR/mds18.log
 # SP=$SIZE  FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds19.log
@@ -117,8 +157,68 @@ export GBS=16; export SIZE=8
 # TP=$SIZE  FA=1  POS_ENCODING=1                         bash $MAIN_SCRIPT |& tee $LOGDIR/mds23.log
 
 ################################################################ VIT3D Benchmark ################################################################
+## BASE
+# num_nodes=$(wc -l < $PBS_NODEFILE)
+# num_gpu=$(( 4 * num_nodes ))
+# export VIT3D=1; export VIT=BASE; export GBS=$num_gpu; export DATA=TOY; export NUM_ITERS=10; 
+# export POS_ENCODING=1; export FA=1; 
+# export PROFILE=1
+
+# factor = [4, 8, 16, 32, 64, 128] 
+# IV = [DP, TP, TP-SP, SP, USP-Uly, USP-Ring]
+# for factor in 4 8 16 32; do ## Cannot fit 64
+#     export factor=$factor
+#     SP=1  FA=1  POS_ENCODING=1  bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_DP${num_gpu}.log ## DP
+#     for MP in 2 4; do
+#         DP=$(( GBS / MP ))
+#         TP=$MP                  bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_TP${MP}_DP${DP}_factor${factor}.log    ## TP
+#         TP=$MP  TP-SP=1         bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_TPSP${MP}_DP${DP}_factor${factor}.log  ## TP-SP
+#         SP=$MP                  bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_SPU${MP}_DP${DP}_factor${factor}.log   ## SP
+#         SP=$MP  USP_ulysses=1   bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_USPU${MP}_DP${DP}_factor${factor}.log  ## USP-Uly
+#         SP=$MP  USP_ring=1      bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_USPR${MP}_DP${DP}_factor${factor}.log  ## USP-Ring
+#     done
+# done
+
+# export factor=4   
+# GBS=8192  SP=1                bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_DP${num_gpu}_factor${factor}.log ## DP
+# export factor=8   
+# GBS=1024  SP=1                bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_DP${num_gpu}_factor${factor}.log ## DP
+# export factor=16  
+# GBS=128   SP=1                bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_DP${num_gpu}_factor${factor}.log ## DP
+# export factor=32  
+# GBS=16    SP=1                bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_DP${num_gpu}_factor${factor}.log ## DP
+# export factor=64  
+# GBS=4     SP=1  ACT_CKPT=1    bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_DP${num_gpu}_factor${factor}_ACT.log ## DP
+
+# export factor=64
+# for GBS in 2; do
+#     for MP in 2; do
+#         DP=$(( GBS / MP ))
+#         TP=$MP  GBS=$GBS                  bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_TP${MP}_DP${DP}_factor${factor}.log    ## TP
+#         TP=$MP  GBS=$GBS  TPSP=1          bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_TPSP${MP}_DP${DP}_factor${factor}.log  ## TP-SP
+#         SP=$MP  GBS=$GBS                  bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_SPU${MP}_DP${DP}_factor${factor}.log   ## SP
+#         SP=$MP  GBS=$GBS  USP_ulysses=1   bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_USPU${MP}_DP${DP}_factor${factor}.log  ## USP-Uly
+#         SP=$MP  GBS=$GBS  USP_ring=1      bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_USPR${MP}_DP${DP}_factor${factor}.log  ## USP-Ring
+#     done
+# done
+
+# factor=128  GBS=1  SP=4  FA=1  USP_ulysses=1  POS_ENCODING=1  bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_DP2SP2.log ## DP
+
+
+# export factor=32
+# export GBS=32
+# # GBS=32  SP=1  FA=1  POS_ENCODING=1  bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_DP${num_gpu}.log ## DP
+# for MP in 2; do
+#     DP=$(( GBS / MP ))
+#     # TP=$MP                  bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_TP${MP}_DP${DP}_factor${factor}.log    ## TP
+#     TP=$MP  TP-SP=1         bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_TPSP${MP}_DP${DP}_factor${factor}.log  ## TP-SP
+#     SP=$MP                  bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_SPU${MP}_DP${DP}_factor${factor}.log   ## SP
+#     # SP=$MP  USP_ulysses=1   bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_USPU${MP}_DP${DP}_factor${factor}.log  ## USP-Uly
+#     SP=$MP  USP_ring=1      bash $MAIN_SCRIPT |& tee $LOGDIR/3dvit_USPR${MP}_DP${DP}_factor${factor}.log  ## USP-Ring
+# done
+
 ## LARGE
-export VIT3D=1; export VIT=Large; export GBS=1; 
+# export VIT3D=1; export VIT=LARGE; export GBS=1; 
 # export SIZE=1; export factor=44;
 # SP=$SIZE  FA=1  POS_ENCODING=1  bash $MAIN_SCRIPT |& tee $LOGDIR/mds_l1.log 
 # export SIZE=2; export factor=52;
@@ -131,7 +231,7 @@ export VIT3D=1; export VIT=Large; export GBS=1;
 # SP=$SIZE  FA=1  POS_ENCODING=1  bash $MAIN_SCRIPT |& tee $LOGDIR/mds_l5.log
 
 ## HUGE
-export VIT3D=1; export VIT=Huge; export GBS=1; 
+# export VIT3D=1; export VIT=HUGE; export GBS=1; 
 # export SIZE=1; export factor=36;
 # SP=$SIZE  FA=1  POS_ENCODING=1  bash $MAIN_SCRIPT |& tee $LOGDIR/mds_h1.log
 # export SIZE=2; export factor=42;

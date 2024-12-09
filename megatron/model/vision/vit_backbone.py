@@ -234,21 +234,38 @@ class VitBackbone(MegatronModule):
                 dev = get_accelerator().current_device() ## NOTE: although rank are unique and range from 0~num_devices, device names should be across nodes. 
                 pos_encoding = positionalencoding1d(self.hidden_size, self.seq_length, dev)
 
-                sp = mpu.get_sequence_parallel_world_size()
-                sp_rank = mpu.get_sequence_parallel_rank()
-                sub_seq_length = self.seq_length // sp
-                sub_seq_start = sp_rank * sub_seq_length
-                sub_seq_end = (sp_rank + 1) * sub_seq_length
-
-                # is_last_sp_rank = sp_rank == sp-1
-                # if is_last_sp_rank:
-                #     self.position_embeddings = pos_encoding[sub_seq_start:, :] ##
-                # else:
-                self.position_embeddings = pos_encoding[sub_seq_start:sub_seq_end, :] ## s, h ?
             else:
                 self.position_embeddings = torch.nn.Embedding(
                     self.seq_length, self.hidden_size
                 )
+
+            ## TODO: Mem fpt: Only generate relevant sequence's positional encoding from the get go
+            sp = mpu.get_sequence_parallel_world_size()
+            sp_rank = mpu.get_sequence_parallel_rank()
+            sub_seq_length = self.seq_length // sp
+            self.remainder_seq_len = self.seq_length % sp
+
+            ## Cleaner code: reduce redundancy of code below
+            if self.remainder_seq_len == 0:
+                sub_seq_start = sp_rank * sub_seq_length
+                sub_seq_end = (sp_rank + 1) * sub_seq_length
+            else:
+                seq_shard_list = [sub_seq_length+1] * self.remainder_seq_len + [sub_seq_length] * (sp-self.remainder_seq_len)
+                sub_seq_start = sum(seq_shard_list[:sp_rank])
+                sub_seq_end = sum(seq_shard_list[:sp_rank+1])
+            
+            self.position_embeddings = pos_encoding[sub_seq_start:sub_seq_end, :] ## s, h ?
+
+            ## For pos_encoding, sub_seq_idx need to include clf_token
+            ## For the actual sequence, sub_seq_idx need to eclude clf_token 
+            ## Therefore, reduce the sub_sequence of first rank by 1 for clf token
+            if self.ds_sequence_parallel:
+                if class_token:
+                    self.sub_seq_start = sub_seq_start if sp_rank == 0 else sub_seq_start - 1
+                    self.sub_seq_end = sub_seq_end - 1
+                else:
+                    self.sub_seq_start = sub_seq_start
+                    self.sub_seq_end = sub_seq_end
 
             args.class_token_present = self.class_token
             
@@ -302,27 +319,17 @@ class VitBackbone(MegatronModule):
                     p3=self.patch_dim,
                 )
 
+            seq_parallel_rank = mpu.get_sequence_parallel_rank()
             if self.ds_sequence_parallel:
-                sp = mpu.get_sequence_parallel_world_size()
-                sp_rank = mpu.get_sequence_parallel_rank()
-                
-                ##TODO: Support undivisible SP? i.e. automatic token padding to enable SP. 
-                sub_seq_length = self.seq_length // sp
-                sub_seq_start = sp_rank * sub_seq_length
-                sub_seq_end = (sp_rank + 1) * sub_seq_length
-
-                # is_last_sp_rank = sp_rank == sp-1
-                # if is_last_sp_rank:
-                #     rearranged_input = rearranged_input[:, sub_seq_start:, :] ## b, s, h
-                # else:
-                rearranged_input = rearranged_input[:, sub_seq_start:sub_seq_end, :] ## b, s, h
+                rearranged_input = rearranged_input[:, self.sub_seq_start:self.sub_seq_end, :] ## b, s, h
                 ## Q. Don't we need to use sequence_data_parallel instead of sequence_parallel_rank?
-                ## > No, sequence_data_parallel_rank is the rank that is unique across both sp and dp groups. 
+                ## > No, sequence_data_parallel_rank is the rank of both sp + dp groups. 
 
             assert rearranged_input.dtype == torch.half
             encoder_output = self.linear_encoder(rearranged_input)
 
-            if self.class_token:
+            ## TODO: think of a way to reduce the number of bools
+            if self.class_token and seq_parallel_rank == 0:
                 cls_tokens = self.cls_token.expand(encoder_output.shape[0], -1, -1)
                 concatenated_tokens = torch.cat((cls_tokens, encoder_output), dim=1)
             else:
@@ -341,12 +348,15 @@ class VitBackbone(MegatronModule):
         else:
             hidden_states = input
 
-        debug_mode = "DEBUG_FNAME" in os.environ
-        if debug_mode:
-            debug_fname = os.environ["DEBUG_FNAME"]
-            with open(debug_fname, "a") as f:
-                f.write(f"\n[{mpu.get_sequence_parallel_rank()}] Before Transformer Layers: {hidden_states}\n")
-                f.write(f"\n[{mpu.get_sequence_parallel_rank()}] Before Transformer Layers shape: {hidden_states.shape}\n")
+        # if torch.distributed.get_rank() == 0:
+        #     hidden_states = hidden_states[:-1]
+        #     print(f"hidden_states.shape: {hidden_states.shape}")
+        # debug_mode = "DEBUG_FNAME" in os.environ
+        # if debug_mode:
+        #     debug_fname = os.environ["DEBUG_FNAME"]
+        #     with open(debug_fname, "a") as f:
+        #         f.write(f"\n[{mpu.get_sequence_parallel_rank()}] Before Transformer Layers: {hidden_states}\n")
+        #         f.write(f"\n[{mpu.get_sequence_parallel_rank()}] Before Transformer Layers shape: {hidden_states.shape}\n")
 
         hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
 
@@ -363,9 +373,9 @@ class VitBackbone(MegatronModule):
                     ## if not single token, then output the entire embedding. 
                     hidden_states = hidden_states.transpose(0, 1).contiguous()
 
-        if debug_mode:
-            with open(debug_fname, "a") as f:
-                f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head: {hidden_states}\n")
-                f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head shape: {hidden_states.shape}\n")
+        # if debug_mode:
+        #     with open(debug_fname, "a") as f:
+        #         f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head: {hidden_states}\n")
+        #         f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head shape: {hidden_states.shape}\n")
 
         return hidden_states

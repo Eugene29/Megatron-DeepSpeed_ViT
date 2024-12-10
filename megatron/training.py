@@ -1354,7 +1354,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         print_rank_0(f"PROFILING...")
         p = torch.profiler.profile(
-            schedule=torch.profiler.schedule(wait=5, warmup=2, active=2),
+            schedule=torch.profiler.schedule(wait=5, warmup=0, active=2),
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
             # on_trace_ready=torch.profiler.tensorboard_trace_handler("/home/eku/aevard/polaris-trial/jobscripts/log/"),
             record_shapes=True,
@@ -1362,7 +1362,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             on_trace_ready=trace_handler,
         )
         p.start()
-        args.train_iters = 10
+        args.train_iters = 7
 
     def llm_num_floating_point_operations(args, batch_size):
         # Group Query Attention.

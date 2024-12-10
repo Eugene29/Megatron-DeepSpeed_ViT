@@ -10,7 +10,7 @@
 ###     LOGFNAME:   Log std. output and std. error
 
 # export NUM_EPOCHS=500 ## Default
-PYSCRIPT=/eagle/datascience/eku/Megatron-DeepSpeed_ViT/mds_qsub.sh ## Work on qsub
+BASH_SCRIPT=/eagle/datascience/eku/Megatron-DeepSpeed_ViT/mds_qsub.sh ## Work on qsub
 
 # QUEUE="debug"
 # QUEUE="debug-scaling"
@@ -33,19 +33,19 @@ echo NGPUS: $NGPUS
 echo DP: $DP
 echo GBS: $GBS
 
-### Example Runs
+## Example Runs
 ## Q. Double check whether TP has a higher worse convergence
-# qsub -V -v LOGFNAME=mds_n${nodes}_TP${MP}_DP${DP}.log,TP=$MP -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $PYSCRIPT
-# qsub -V -v LOGFNAME=mds_n${nodes}_SP${MP}_DP${DP}.log,SP=$MP -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $PYSCRIPT
-# qsub -V -v LOGFNAME=mds_n${nodes}_DP${NGPUS}.log             -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $PYSCRIPT
+qsub -V -v LOGFNAME=qsub_n${nodes}_TP${MP}_DP${DP}.log,TP=$MP -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT
+qsub -V -v LOGFNAME=qsub_n${nodes}_SP${MP}_DP${DP}.log,SP=$MP -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT
+qsub -V -v LOGFNAME=qsub_n${nodes}_DP${NGPUS}.log             -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT
 
 ## Q. Does scaling it to two nodes make a difference in convergence somehow?
 # Submit different configuration jobs
-# MP=8
-# nodes=2
-# qsub -V -v LOGFNAME=mds_n${nodes}_TP${MP}_DP${DP}.log,TP=$MP -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $PYSCRIPT
-# qsub -V -v LOGFNAME=mds_n${nodes}_SP${MP}_DP${DP}.log,SP=$MP -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $PYSCRIPT
-# qsub -V -v LOGFNAME=mds_n${nodes}_DP${NGPUS}.log             -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $PYSCRIPT
+MP=8
+nodes=2
+qsub -V -v LOGFNAME=qsub_n${nodes}_TP${MP}_DP${DP}.log,TP=$MP -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT
+qsub -V -v LOGFNAME=qsub_n${nodes}_SP${MP}_DP${DP}.log,SP=$MP -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT
+qsub -V -v LOGFNAME=qsub_n${nodes}_DP${NGPUS}.log             -A $PROJ -q $QUEUE -l select=$nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT
 
 
 ## IGNORE BELOW

@@ -17,5 +17,5 @@ unset NCCL_NET
 unset NCCL_NET_GDR_LEVEL
 
 ## Basic Config
-FA=1 POS_ENCODING=1 bash $MAIN_SCRIPT |& tee $LOGDIR/$LOGFNAME ## nested qsub allows tee
+FA=1 POS_ENCODING=1 bash $MAIN_SCRIPT |& tee $LOGDIR/$LOGFNAME ## TODO: get rid of nested qsub? 
 

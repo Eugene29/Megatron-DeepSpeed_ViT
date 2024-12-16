@@ -170,7 +170,6 @@ def _set_wandb_writer(args):
     from datetime import datetime
     import pytz
     if os.environ["WANDB_MODE"] != "disabled":
-        raise KeyboardInterrupt
         ct = pytz.timezone('America/Chicago')
         WS = f"WS{torch.distributed.get_world_size()}_"
         if "TPSP" in os.environ:

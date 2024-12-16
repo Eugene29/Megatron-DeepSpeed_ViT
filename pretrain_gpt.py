@@ -102,24 +102,20 @@ def get_batch(data_iterator):
     # Broadcast data.
     if data_iterator is not None:
         data = next(data_iterator)
-        # print(f"data: {data}")
-        # print(f"len(data['text']): {data['text'].shape}")
-        # raise KeyboardInterrupt("break")
-    
-        if "DATA_PATH_LOG" in os.environ: ## tokens_consumed.log
-            if "TOY" in os.environ:
-                ### TOY DATASET ###
-                b = int(os.environ["global_batch_size"])
-                s = int(os.environ["seq_len"]) + 1 ## Q. Why and how do we add one more to the sequence? 
-                V = 38406 ## Vocab length lower bound
-                tokens = torch.randint(V, (b, s)) ## B, S
-                ## WRONG DP BUT STILL SHOULD GIVE THE SAME OUTPUT, JUST WITHOUT THE MEMORY SAVING AND SPEEDUP. 
-                ## THIS IS BECAUSE EACH DP SEES THE SAME DATA.
-                data = {'text': tokens}
-            with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
-                file.write(f"tokens: {data['text']}\n") ## write file
     else:
         data = None
+
+    if "DATA_PATH_LOG" in os.environ: ## We want to make sure the data fetched are the same across all comparisons.
+        rank = torch.distributed.get_rank()
+        dp = mpu.get_data_parallel_world_size()
+        dp_rank = mpu.get_data_parallel_rank()
+        dp_src_rank = mpu.get_data_parallel_src_rank()
+
+        with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
+            for i in range(dp):
+                if dp_src_rank == 0 and i == dp_rank: ## print data sequentially for easier comparison
+                    file.write(f"(rank{rank}) tokens: {data['text']}\n")
+                torch.distributed.barrier()
     data_b = tensor_parallel.broadcast_data(keys, data, datatype)
 
     # Unpack.
@@ -142,13 +138,12 @@ def get_batch(data_iterator):
     seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
 
     # For Megatron's sequence parallel
-    ## This "scatter" might be needed to parallelize layers before the first attn layer. 
     if args.sequence_parallel:
         seq_parallel_world_size = mpu.get_tensor_model_parallel_world_size()
         seq_parallel_world_rank = mpu.get_tensor_model_parallel_rank()
     seq_length = tokens.size(1)
 
-    assert seq_length % seq_parallel_world_size == 0, f"seq_length: {seq_length}, seq_parallel_world_size: {seq_parallel_world_size}"
+    assert seq_length % seq_parallel_world_size == 0
     sub_seq_length = seq_length // seq_parallel_world_size
     sub_seq_start = seq_parallel_world_rank * sub_seq_length
     sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length

@@ -180,6 +180,7 @@ cat <<EOF > "$DS_CONFIG_FNAME"
     }
 }
 EOF
+        # "contiguous_gradients": true,
         # "reduce_scatter": true,
         # "allgather_partitions": true,
         # "mics_hierarchical_params_gather": true

@@ -654,7 +654,7 @@ class ParallelAttention(MegatronModule):
                 ## A. Always use FA as Ring-Attention is an extension of FA
                 ## Q. What is use_ulysses_low? What will be the inner SP? 
                 USP_degree = int(sp_size**0.5)
-                set_seq_parallel_pg(sp_ulysses_degree=sp_size, sp_ring_degree=1, rank=rank, world_size=world_size, use_ulysses_low=False)
+                set_seq_parallel_pg(sp_ulysses_degree=USP_degree, sp_ring_degree=1, rank=rank, world_size=world_size, use_ulysses_low=False)
                 # self.dist_attn = AsyncLongContextAttention(ring_impl_type="basic")
                 self.dist_attn = LongContextAttention(ring_impl_type="basic")
             else:
@@ -663,7 +663,7 @@ class ParallelAttention(MegatronModule):
                 self.dist_attn = DistributedAttention(
                     local_attn, 
                     parallel_state.get_sequence_parallel_group(), ## group that needs to communicate together. (if 1, then it communicates with other devices in 1)
-                    gather_idx=1 if args.use_flash_attn_v1 or args.use_flash_attn_v2 else 0) 
+                    gather_idx=1 if args.use_flash_attn_v1 or args.use_flash_attn_v2 else 0)
                 # flash_attn_cuda assumes [b, s, nh, hd] layout, we need to make sure all2all gathers into the correct sequence dimension.
         else:
             if self.use_flash_attn:

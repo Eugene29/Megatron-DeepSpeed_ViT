@@ -4,7 +4,8 @@
   "steps_per_print": LOG_INTERVAL,
 
   "zero_optimization": {
-    "stage": ZERO_STAGE
+    "stage": ZERO_STAGE,
+    "overlap_comm": true
   },
 
   "gradient_clipping": 1.0,

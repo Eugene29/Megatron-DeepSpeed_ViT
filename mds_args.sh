@@ -88,7 +88,7 @@ elif [[ $DATA == 'CIFAR' ]]; then
     LR=1e-4
     WEIGHT_DECAY=0
     PATCH_DIM=4
-    size_factor=1
+    # size_factor=1
     IMG_W=32
     IMG_H=32
 
@@ -116,7 +116,7 @@ elif [[ $DATA == 'TOY' ]]; then
     IMG_W=$(($PATCH_DIM * $factor))
     IMG_H=$(($PATCH_DIM * $factor))
     IMG_D=$(($PATCH_DIM * $factor)) ## image depth for 3dvit, not used if 2dvit
-    NUM_CHANNELS=${NUM_CHANNELS:-1} ## 1 for 3dvit, default=3 for 2dvit.
+    NUM_CHANNELS=${NUM_CHANNELS:-1} ## 1 for 2d, 3dvit (TOY).
     LR_WARMUP_SAMPLES=0
 
     ## DATA
@@ -168,10 +168,22 @@ cat <<EOF > "$DS_CONFIG_FNAME"
                         "output_file": null
                         },
     "zero_optimization": {
-        "stage": $ZERO
+        "stage": $ZERO,
+        "contiguous_gradients": true,
+        "overlap_comm": true
+    },
+    "comms_logger": {
+        "enabled": true,
+        "verbose": false,
+        "prof_all": true,
+        "debug": false
     }
 }
 EOF
+        # "reduce_scatter": true,
+        # "allgather_partitions": true,
+        # "mics_hierarchical_params_gather": true
+
 ## TODO: add optimal activation_checkpointing config
 #  "activation_checkpointing": {
 #     "partition_activations": false,
@@ -192,7 +204,7 @@ if [[ $VIT == "TINY" ]]; then
     HSIZE=512
     FFN_HSIZE=512
     NUM_HEADS=8
-    PATCH_DIM=4
+    # PATCH_DIM=4
 elif [[ $VIT == "BASE" ]]; then
     ## ViT-BASE (86M)
     NLAYERS=12
@@ -211,16 +223,38 @@ elif [[ $VIT == "HUGE" ]]; then
     HSIZE=1280
     FFN_HSIZE=5120
     NUM_HEADS=16
-elif [[ $VIT == "2B" ]]; then
-    ## VIT-2B (1.6B in VIT? Why doesn't it fit?)
-    echo TBD
-    exit 1
-    # NLAYERS=10
-    # HSIZE=4096
-    # FFN_HSIZE=11008
-    # HSIZE=16384
-    # FFN_HSIZE=16384
-    # NUM_HEADS=32
+elif [[ $VIT == "GIANT" ]]; then
+    NLAYERS=48
+    HSIZE=1664
+    FFN_HSIZE=8192
+    NUM_HEADS=16
+    # ATT_DROPOUT=0.1
+    # H_DROPOUT=0.1
+elif [[ $VIT == "ENORMOUS" ]]; then
+    NLAYERS=56
+    HSIZE=1792
+    FFN_HSIZE=15360
+    NUM_HEADS=16
+    # ATT_DROPOUT=0.1
+    # H_DROPOUT=0.1
+elif [[ $VIT == "4B" ]]; then
+    ## 3.8B
+    NLAYERS=48
+    HSIZE=2560
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=16
+elif [[ $VIT == "12B" ]]; then
+    ## 12.3B
+    NLAYERS=48
+    HSIZE=4608
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=48
+elif [[ $VIT == "22B" ]]; then
+    ## 21.8B
+    NLAYERS=48
+    HSIZE=6144
+    FFN_HSIZE=24576
+    NUM_HEADS=48
     # ATT_DROPOUT=0.1
     # H_DROPOUT=0.1
 else

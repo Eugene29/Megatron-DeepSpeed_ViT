@@ -247,7 +247,8 @@ if __name__ == "__main__":
             args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
         )
     except RuntimeError as e:
-        if "CUDA out of memory" in str(e):
+        if "CUDA out of memory" in str(e) or "out of memory" in str(e):
+        # if "CUDA out of memory" in str(e):
             print_rank_0("\nCUDA OUT OF MEMORY. Forcefully terminating...\n")
             os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
         else:
@@ -257,6 +258,7 @@ if __name__ == "__main__":
     #     print(f"\nERROR MESSAGE: {str(e)}\n")
     #     os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
 
+    dist.barrier() ## prevent accidental saving? 
     print_rank_0(f"tot train time: {time.time() - train_strt}")
 
     if dist.get_rank() == 0:
@@ -264,37 +266,39 @@ if __name__ == "__main__":
         args = get_args()
         log_keys = [ "iteration", "time", "LLM_TFLOPS", "TFLOPS", "TFLOPS_per_gpu", "samples_per_sec", "memory_fpt(GiB)" ]
         log_dict = {k:getattr(args, k) for k in log_keys}
+        log_dict["num_params"] = os.environ.get("NUM_PARAMS", "NA")
+        log_dict["model_size"] = os.environ.get("VIT", "NA")
         wandb_writer = get_wandb_writer()
         wandb_writer.log(log_dict, step=args.logger_iteration)
-        pprint.pprint(log_dict)
-        
-    print_rank_0("Pretrain completed.")
 
-    ## Log results to compare across different runs
-    if dist.get_rank() == 0 and os.environ.get("LOG_RESULTS") == "1":
-        import json
-        fpath = 'logs/results.json'
-        if not os.path.exists(fpath):
-            pardir = os.path.dirname(fpath)
-            os.makedirs(pardir, exist_ok=True)
-            results = {}
-        else:
-            with open(fpath, mode='r') as file:
-                results = json.load(file)
-            
-        with open(fpath, mode='w') as file:
-            num_nodes = os.environ.get("SIZE", "NA")
-            GBS = os.environ.get("GBS", "NA")
-            IMG_H = os.environ.get("IMG_H", "NA")
-            method = os.environ.get("method", "NA")
-            log_dict['GBS'] = GBS
-            log_dict['IMG_H'] = IMG_H
-            log_dict['method'] = method
-            
-            if num_nodes not in results:
-                results[num_nodes] = [log_dict]
+        ## Log results to compare across different runs
+        if os.environ.get("LOG_RESULTS") == "1":
+            import json
+            fpath = 'logs/results.json'
+            if not os.path.exists(fpath):
+                pardir = os.path.dirname(fpath)
+                os.makedirs(pardir, exist_ok=True)
+                results = {}
             else:
-                results[num_nodes].append(log_dict)
-            json.dump(results, file)
-            # pprint.pprint(results)
+                with open(fpath, mode='r') as file:
+                    results = json.load(file)
+                
+            with open(fpath, mode='w') as file:
+                num_nodes = os.environ.get("SIZE", "NA")
+                GBS = os.environ.get("GBS", "NA")
+                IMG_H = os.environ.get("IMG_H", "NA")
+                method = os.environ.get("method", "NA")
+                log_dict['GBS'] = GBS
+                log_dict['IMG_H'] = IMG_H
+                log_dict['method'] = method
+
+                if num_nodes not in results:
+                    results[num_nodes] = [log_dict]
+                else:
+                    results[num_nodes].append(log_dict)
+                json.dump(results, file)
+                # pprint.pprint(results)
+
+            pprint.pprint(log_dict)
+            print("Pretrain completed.")
     exit()

@@ -15,7 +15,7 @@ SCRIPT_DIR=$(dirname $0 | xargs realpath)
 cd $SCRIPT_DIR
 PYTHONPATH=$og_PYTHONPATH
 YUNCHANG=$SCRIPT_DIR/long-context-attention ## Custom yunchang (USP)
-YUNCHANG=$SCRIPT_DIR/DeepSpeed ## Temporary DeepSpeed
+# YUNCHANG=$SCRIPT_DIR/DeepSpeed ## Temporary DeepSpeed
 PYTHONPATH="$YUNCHANG:$PYTHONPATH"
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Add local megatron path
 
@@ -106,6 +106,9 @@ if [[ $ACT_CKPT -eq 1 ]]; then
      DS_ARGS="--deepspeed-activation-checkpointing $DS_ARGS" ## Useless? 
      MEG_ARGS="--checkpoint-activations"
 fi
+
+## TODO: Add prescale grad option?
+# prescale_grad="true"
 
 echo "Launching mpiexec."
 # nsys="nsys profile -o $log_dir/$time --stats=true --show-output=true"

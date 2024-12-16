@@ -405,6 +405,10 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
             mpu.get_pipeline_model_parallel_rank(),
             sum([sum([p.ds_numel if hasattr(p,'ds_id') else p.nelement() for p in model_module.parameters()])
                  for model_module in model])), flush=True)
+        num_params = sum([sum([p.ds_numel if hasattr(p,'ds_id') else p.nelement() for p in model_module.parameters()])
+                        for model_module in model])
+        import os
+        os.environ["NUM_PARAMS"] = str(num_params)
 
     if args.deepspeed:
         return model
@@ -1317,8 +1321,16 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             # output = p.key_averages().table(sort_by="self_cuda_time_total", row_limit=10)
             log_dir = "./trace_vit/"
             os.makedirs(log_dir, exist_ok=True)
+
             rank = torch.cuda.current_device()
             WS = torch.distributed.get_world_size()
+            if log_dir:
+                if torch.distributed.get_rank() == 0:
+                    import pytz
+                    chicago_tz = pytz.timezone("America/Chicago")
+                    time = datetime.now(chicago_tz)
+                    p.export_chrome_trace(log_dir + f"{WS}{time}.json")
+                return
             FA = 'FA_' if 'FA' in os.environ else ""
             SP = "SP" + os.environ["SP"] + "_"
             if "TPSP" in os.environ:
@@ -1354,7 +1366,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         print_rank_0(f"PROFILING...")
         p = torch.profiler.profile(
-            schedule=torch.profiler.schedule(wait=5, warmup=0, active=2),
+            schedule=torch.profiler.schedule(wait=1, warmup=1, active=2),
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
             # on_trace_ready=torch.profiler.tensorboard_trace_handler("/home/eku/aevard/polaris-trial/jobscripts/log/"),
             record_shapes=True,
@@ -1362,7 +1374,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             on_trace_ready=trace_handler,
         )
         p.start()
-        args.train_iters = 7
+        args.train_iters = 4
 
     def llm_num_floating_point_operations(args, batch_size):
         # Group Query Attention.
@@ -1576,6 +1588,9 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         if profile_enabled:
             p.step()
+            deepspeed.comm.log_summary(show_straggler=False)
+            # print() ## log comm (decrease perf slightly)
+
 
         step_time = time.time() - strt
         # max_memory_used = torch.cuda.max_memory_allocated() / (1024**3)

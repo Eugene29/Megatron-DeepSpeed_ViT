@@ -169,7 +169,6 @@ cat <<EOF > "$DS_CONFIG_FNAME"
                         },
     "zero_optimization": {
         "stage": $ZERO,
-        "contiguous_gradients": true,
         "overlap_comm": true
     },
     "comms_logger": {

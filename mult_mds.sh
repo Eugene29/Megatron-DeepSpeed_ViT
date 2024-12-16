@@ -58,7 +58,7 @@ unset NCCL_NET_GDR_LEVEL
 # export GBS=2048;
 # export GBS=1; export DATA=CIFAR; export VIT=22B
 # export GBS=4; export DATA=TOY; export VIT=ENORMOUS
-export GBS=8; export DATA=TOY; export factor=128; export VIT=4B
+export GBS=4; export DATA=TOY; export factor=64; export VIT=4B
 # SIZE=1 NUM_ITERS=20 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds1.log
 # SP=1   ACT_CKPT=1 NUM_ITERS=100 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds2.log
 # SP=1   NUM_ITERS=1000 FA=1 POS_ENCODING=1               bash $MAIN_SCRIPT |& tee $LOGDIR/mds4.log
@@ -67,7 +67,7 @@ export GBS=8; export DATA=TOY; export factor=128; export VIT=4B
 # export VIT3D=1
 
 # SP=1 ZERO=2 NUM_ITERS=10 FA=1 POS_ENCODING=1 bash $MAIN_SCRIPT |& tee $LOGDIR/benchmark.log ## check that this runs as expectedly. 
-SP=1 ZERO=3 NUM_ITERS=10 FA=1 POS_ENCODING=1 bash $MAIN_SCRIPT |& tee $LOGDIR/benchmark2.log ## check that this runs as expectedly. 
+SP=1 ZERO=2 NUM_ITERS=10 FA=1 POS_ENCODING=1 bash $MAIN_SCRIPT |& tee $LOGDIR/benchmark2.log ## check that this runs as expectedly. 
 
 # SP=4 ZERO=2 NUM_ITERS=10 FA=1 POS_ENCODING=1 bash $MAIN_SCRIPT |& tee $LOGDIR/benchmark2.log ## check that this runs as expectedly. 
 # DP=4 ZERO=2 NUM_ITERS=10 FA=1 POS_ENCODING=1 bash $MAIN_SCRIPT |& tee $LOGDIR/benchmark3.log ## check that this runs as expectedly. 

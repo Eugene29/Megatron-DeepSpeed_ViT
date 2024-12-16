@@ -193,7 +193,8 @@ def _set_wandb_writer(args):
         exp_name = WS + SP + TP + ZERO + ACT + IMG ## One can infer DP
         args.wandb_exp_name = exp_name + datetime.now(ct).strftime("%Y-%m-%d_%I:%M_%p")
 
-    if args.rank == (args.world_size - 1):
+
+    if args.rank == 0: ## WANDB is on rank 0
         if getattr(args, 'wandb_project', '') == '' and \
            getattr(args, 'wandb_exp_name', '') == '':
             print('WARNING: WANDB writing requested but no legit wandb '

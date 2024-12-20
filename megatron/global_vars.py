@@ -169,34 +169,34 @@ def _set_wandb_writer(args):
     ## Name WandB experiment with current CT time. 
     from datetime import datetime
     import pytz
-    ct = pytz.timezone('America/Chicago')
-    WS = f"WS{torch.distributed.get_world_size()}_"
-    if "TPSP" in os.environ:
-        TP = f"TP-SP{os.environ['TP']}_"
-    else:
-        TP = f"TP{os.environ['TP']}_"
-    # VIT = os.environ["VIT"] + "_"
-    # VIT3D = "3D_" if "VIT3D" in os.environ else ""
-    IMG = "IMG" + os.environ["IMG_H"] + "_"
-    ZERO = "ZERO" + os.environ["ZERO"] + "_"
-    ACT = "ACT_" if "ACT_CKPT" in os.environ else ""
-    if "USP_ulysses" in os.environ:
-        framework = "USPU"
-    elif "USP_ring" in os.environ:
-        framework = "USPR"
-    elif "USP_hybrid" in os.environ:
-        framework = "USPH"
-    else:
-        framework = "SPU"
-    SP = framework + os.environ["SP"] + "_"
-    exp_name = WS + SP + TP + ZERO + ACT + IMG ## One can infer DP
-    args.wandb_exp_name = exp_name + datetime.now(ct).strftime("%Y-%m-%d_%I:%M_%p")
+    if os.environ["WANDB_MODE"] != "disabled":
+        ct = pytz.timezone('America/Chicago')
+        WS = f"WS{torch.distributed.get_world_size()}_"
+        if "TPSP" in os.environ:
+            TP = f"TP-SP{os.environ['TP']}_"
+        else:
+            TP = f"TP{os.environ['TP']}_"
+        # VIT = os.environ["VIT"] + "_"
+        # VIT3D = "3D_" if "VIT3D" in os.environ else ""
+        IMG = "IMG" + os.environ["IMG_H"] + "_"
+        ZERO = "ZERO" + os.environ["ZERO"] + "_"
+        ACT = "ACT_" if "ACT_CKPT" in os.environ else ""
+        if "USP_ulysses" in os.environ:
+            framework = "USPU"
+        elif "USP_ring" in os.environ:
+            framework = "USPR"
+        elif "USP_hybrid" in os.environ:
+            framework = "USPH"
+        else:
+            framework = "SPU"
+        SP = framework + os.environ["SP"] + "_"
+        exp_name = WS + SP + TP + ZERO + ACT + IMG ## One can infer DP
+        args.wandb_exp_name = exp_name + datetime.now(ct).strftime("%Y-%m-%d_%I:%M_%p")
 
-    ## Using args.world_size - 1 causes it to hang. Interesting case.. I wonder why
-    # if args.rank == (args.world_size - 1):
-    if args.rank == 0:
-        if args.wandb_project == '' or \
-            args.wandb_exp_name == '':
+
+    if args.rank == 0: ## WANDB is on rank 0
+        if getattr(args, 'wandb_project', '') == '' and \
+           getattr(args, 'wandb_exp_name', '') == '':
             print('WARNING: WANDB writing requested but no legit wandb '
                   'project or experiment name provided, '
                   'therefore no WANDB logs will be written '

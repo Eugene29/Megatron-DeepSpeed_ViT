@@ -29,6 +29,8 @@ bookcorpus_data/
 *.bin
 *.idx
 *.pt
+*.sh.e*
+*.sh.o*
 
 # folders
 wandb/

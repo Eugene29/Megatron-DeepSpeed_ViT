@@ -88,7 +88,7 @@ elif [[ $DATA == 'CIFAR' ]]; then
     LR=1e-4
     WEIGHT_DECAY=0
     PATCH_DIM=4
-    size_factor=1
+    # size_factor=1
     IMG_W=32
     IMG_H=32
 
@@ -116,7 +116,7 @@ elif [[ $DATA == 'TOY' ]]; then
     IMG_W=$(($PATCH_DIM * $factor))
     IMG_H=$(($PATCH_DIM * $factor))
     IMG_D=$(($PATCH_DIM * $factor)) ## image depth for 3dvit, not used if 2dvit
-    NUM_CHANNELS=${NUM_CHANNELS:-1} ## 1 for 3dvit, default=3 for 2dvit.
+    NUM_CHANNELS=${NUM_CHANNELS:-1} ## 1 for 2d, 3dvit (TOY).
     LR_WARMUP_SAMPLES=0
 
     ## DATA
@@ -141,37 +141,82 @@ fi
 
 cat <<EOF > "$DS_CONFIG_FNAME"
 {
-    "train_micro_batch_size_per_gpu": $MBS,
-    "steps_per_print": 9999999999,
-    "gradient_accumulation_steps": 1,
-    "zero_allow_untested_optimizer": false,
-    "gradient_clipping": 1.0,
-    "communication_data_type": "fp16",
-    "fp16": {
-                "enabled": true,
-                "loss_scale": 0
-            },
-    "wall_clock_breakdown": false,
-    "logging_level": "WARNING",
-    "comms_logger": {
-                        "enabled": false,
-                        "verbose": false,
-                        "prof_all": true,
-                        "debug": false
-                    },
-    "flops_profiler": {
-                        "enabled": false,
-                        "profile_step": 10,
-                        "module_depth": -1,
-                        "top_modules": 1,
-                        "detailed": false,
-                        "output_file": null
-                        },
-    "zero_optimization": {
-        "stage": $ZERO
-    }
+  "train_batch_size": $GBS,
+  "train_micro_batch_size_per_gpu": $MBS,
+  "steps_per_print": 10,
+
+  "zero_optimization": {
+    "stage": $ZERO,
+    "overlap_comm": true,
+    "allgather_partitions": false
+  },
+
+  "gradient_clipping": 1.0,
+  "prescale_gradients": false,
+  "communication_data_type": "fp16",
+
+  "fp16": {
+    "enabled": true,
+    "loss_scale": 0,
+    "loss_scale_window": 500,
+    "hysteresis": 2,
+    "min_loss_scale": 1,
+    "initial_scale_power": 11
+  },
+  "wall_clock_breakdown" : false
 }
 EOF
+
+#  "activation_checkpointing": {
+#     "partition_activations": false,
+#     "cpu_checkpointing": false,
+#     "contiguous_memory_optimization": false,
+#     "number_checkpoints": null,
+#     "synchronize_checkpoint_boundary": false,
+#     "profile": false
+#     }
+## TODO: add optimal activation_checkpointing config
+
+
+# cat <<EOF > "$DS_CONFIG_FNAME"
+# {
+#     "train_micro_batch_size_per_gpu": $MBS,
+#     "steps_per_print": 9999999999,
+#     "gradient_accumulation_steps": 1,
+#     "zero_allow_untested_optimizer": true,
+#     "gradient_clipping": 1.0,
+#     "communication_data_type": "fp16",
+#     "fp16": {
+#                 "enabled": true,
+#                 "loss_scale": 0
+#             },
+#     "wall_clock_breakdown": false,
+#     "logging_level": "WARNING",
+#     "flops_profiler": {
+#                         "enabled": false,
+#                         "profile_step": 10,
+#                         "module_depth": -1,
+#                         "top_modules": 1,
+#                         "detailed": false,
+#                         "output_file": null
+#                         },
+#     "zero_optimization": {
+#         "stage": $ZERO,
+#         "overlap_comm": true
+#     },
+#     "comms_logger": {
+#         "enabled": true,
+#         "verbose": false,
+#         "prof_all": true,
+#         "debug": false
+#     }
+# }
+# EOF
+        # "contiguous_gradients": true,
+        # "reduce_scatter": true,
+        # "allgather_partitions": true,
+        # "mics_hierarchical_params_gather": true
+
 ## TODO: add optimal activation_checkpointing config
 #  "activation_checkpointing": {
 #     "partition_activations": false,
@@ -192,7 +237,7 @@ if [[ $VIT == "TINY" ]]; then
     HSIZE=512
     FFN_HSIZE=512
     NUM_HEADS=8
-    PATCH_DIM=4
+    # PATCH_DIM=4
 elif [[ $VIT == "BASE" ]]; then
     ## ViT-BASE (86M)
     NLAYERS=12
@@ -211,18 +256,117 @@ elif [[ $VIT == "HUGE" ]]; then
     HSIZE=1280
     FFN_HSIZE=5120
     NUM_HEADS=16
-elif [[ $VIT == "2B" ]]; then
-    ## VIT-2B (1.6B in VIT? Why doesn't it fit?)
-    echo TBD
-    exit 1
-    # NLAYERS=10
-    # HSIZE=4096
-    # FFN_HSIZE=11008
-    # HSIZE=16384
-    # FFN_HSIZE=16384
-    # NUM_HEADS=32
+elif [[ $VIT == "GIANT" ]]; then
+    NLAYERS=48
+    HSIZE=1664
+    FFN_HSIZE=8192
+    NUM_HEADS=16
     # ATT_DROPOUT=0.1
     # H_DROPOUT=0.1
+elif [[ $VIT == "ENORMOUS" ]]; then
+    NLAYERS=56
+    HSIZE=1792
+    FFN_HSIZE=15360
+    NUM_HEADS=16
+    # ATT_DROPOUT=0.1
+    # H_DROPOUT=0.1
+elif [[ $VIT == "4B" ]]; then
+    ## 3.8B
+    NLAYERS=48
+    HSIZE=2560
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=32
+# elif [[ $VIT == "1B" ]]; then
+#     ## 3.8B
+#     NLAYERS=24
+#     HSIZE=3072
+#     FFN_HSIZE=$((4 * HSIZE))
+#     NUM_HEADS=32
+elif [[ $VIT == "3B" ]]; then
+    ## 3.8B
+    NLAYERS=24
+    HSIZE=3072
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=32
+elif [[ $VIT == "5B" ]]; then
+    ## 5B
+    NLAYERS=28
+    HSIZE=$((64 * 60))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=32
+elif [[ $VIT == "5.6B" ]]; then
+    ## 5.6B
+    NLAYERS=28
+    HSIZE=$((64 * 64))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=32
+elif [[ $VIT == "6B" ]]; then
+    ## 6.4B
+    NLAYERS=32
+    HSIZE=4096
+    NUM_HEADS=32
+    FFN_HSIZE=$((4 * HSIZE))
+elif [[ $VIT == "8B" ]]; then
+    ## 8.2B
+    NLAYERS=32
+    HSIZE=$((64 * 72))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=32
+elif [[ $VIT == "9B" ]]; then
+    ## 9.2B
+    NLAYERS=36
+    HSIZE=$((64 * 72))
+    FFN_HSIZE=$((4*HSIZE))
+    NUM_HEADS=32
+elif [[ $VIT == "13B" ]]; then
+    ## GPT-3 13B in VIT 12.6B (?)
+    # model_size=13
+    NLAYERS=40
+    HSIZE=5120
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=40
+elif [[ $VIT == "14B" ]]; then
+    ## 13.8
+    NLAYERS=44
+    HSIZE=$((64 * 80))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=40
+elif [[ $VIT == "17B" ]]; then
+    ## 16.7
+    NLAYERS=44
+    HSIZE=$((64 * 88))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=44
+elif [[ $VIT == "20B" ]]; then
+    ## 19.9
+    NLAYERS=44
+    HSIZE=$((64 * 96))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=48
+elif [[ $VIT == "22B" ]]; then
+    ## 21.8B
+    NLAYERS=48
+    HSIZE=6144
+    FFN_HSIZE=24576
+    NUM_HEADS=48
+elif [[ $VIT == "25B" ]]; then
+    ## 24.5B
+    NLAYERS=48
+    HSIZE=$((64 * 102))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=48
+elif [[ $VIT == "26B" ]]; then
+    ## 25.5B
+    NLAYERS=49
+    HSIZE=$(( 64 * 104 ))
+    FFN_HSIZE=$(( 4 * HSIZE ))
+    NUM_HEADS=52
+elif [[ $VIT == "28B" ]]; then
+    ## 27.6B
+    NLAYERS=50
+    HSIZE=$(( 64 * 106 ))
+    FFN_HSIZE=$(( 4 * HSIZE ))
+    NUM_HEADS=53
 else
     echo "VIT not implemented"
     exit 1

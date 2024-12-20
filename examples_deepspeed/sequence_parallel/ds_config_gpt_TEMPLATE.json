@@ -4,11 +4,14 @@
   "steps_per_print": LOG_INTERVAL,
 
   "zero_optimization": {
-    "stage": ZERO_STAGE
+    "stage": ZERO_STAGE,
+    "overlap_comm": true,
+    "contiguous_gradients": true
   },
 
   "gradient_clipping": 1.0,
   "prescale_gradients": PRESCALE_GRAD,
+  "communication_data_type": "fp16",
 
   "fp16": {
     "enabled": true,
@@ -19,5 +22,11 @@
     "initial_scale_power": 11
   },
 
-  "wall_clock_breakdown" : false
+  "wall_clock_breakdown" : false,
+  "comms_logger": {
+      "enabled": true,
+      "verbose": false,
+      "prof_all": true,
+      "debug": false
+  }
 }

@@ -1,11 +1,11 @@
 # Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain VIT"""
-from mpi4py import MPI
+# from mpi4py import MPI
 import torch.distributed as dist
 import torch.distributed
-comm = MPI.COMM_WORLD
-comm.Barrier()
+# comm = MPI.COMM_WORLD
+# comm.Barrier()
 
 import torch
 import torch.nn.functional as F
@@ -38,6 +38,7 @@ def model_provider(pre_process=True, post_process=True):
         dpg = mpu.get_data_parallel_group()
     else:
         dpg = None
+    # with deepspeed.zero.MiCS_Init(data_parallel_group=dpg,
     with deepspeed.zero.Init(data_parallel_group=dpg,
                              remote_device=None if args.remote_device == 'none' else args.remote_device,
                              config_dict_or_path=args.deepspeed_config_dict,
@@ -217,13 +218,14 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
 if __name__ == "__main__":
     ##TODO: What's going on under the hood? Take time to replace it with MPI?  
-    import ezpz as ez
-    RANK = ez.setup_torch(backend="deepspeed")#, timeout=72000) ## 20 hours max.
-    WORLD_SIZE = ez.get_world_size()
-    LOCAL_RANK = ez.get_local_rank()
-    DEVICE_TYPE = ez.dist.get_torch_device_type()
+    # import ezpz as ez
+    # RANK = ez.setup_torch(backend="deepspeed")#, timeout=72000) ## 20 hours max.
+    # WORLD_SIZE = ez.get_world_size()
+    # LOCAL_RANK = ez.get_local_rank()
+    # DEVICE_TYPE = ez.dist.get_torch_device_type()
+    local_rank = int(os.environ["LOCAL_RANK"])
     if torch.cuda.is_available():
-        torch.cuda.set_device(LOCAL_RANK)
+        torch.cuda.set_device(local_rank)
 
     # RANK = comm.Get_rank()
     # WORLD_SIZE = comm.Get_size()
@@ -247,7 +249,8 @@ if __name__ == "__main__":
             args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
         )
     except RuntimeError as e:
-        if "CUDA out of memory" in str(e):
+        if "CUDA out of memory" in str(e) or "out of memory" in str(e):
+        # if "CUDA out of memory" in str(e):
             print_rank_0("\nCUDA OUT OF MEMORY. Forcefully terminating...\n")
             os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
         else:
@@ -257,6 +260,7 @@ if __name__ == "__main__":
     #     print(f"\nERROR MESSAGE: {str(e)}\n")
     #     os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
 
+    dist.barrier() ## prevent accidental saving? 
     print_rank_0(f"tot train time: {time.time() - train_strt}")
 
     if dist.get_rank() == 0:
@@ -264,37 +268,39 @@ if __name__ == "__main__":
         args = get_args()
         log_keys = [ "iteration", "time", "LLM_TFLOPS", "TFLOPS", "TFLOPS_per_gpu", "samples_per_sec", "memory_fpt(GiB)" ]
         log_dict = {k:getattr(args, k) for k in log_keys}
+        log_dict["num_params"] = os.environ.get("NUM_PARAMS", "NA")
+        log_dict["model_size"] = os.environ.get("VIT", "NA")
         wandb_writer = get_wandb_writer()
         wandb_writer.log(log_dict, step=args.logger_iteration)
-        pprint.pprint(log_dict)
-        
-    print_rank_0("Pretrain completed.")
 
-    ## Log results to compare across different runs
-    if dist.get_rank() == 0 and os.environ.get("LOG_RESULTS") == "1":
-        import json
-        fpath = 'logs/results.json'
-        if not os.path.exists(fpath):
-            pardir = os.path.dirname(fpath)
-            os.makedirs(pardir, exist_ok=True)
-            results = {}
-        else:
-            with open(fpath, mode='r') as file:
-                results = json.load(file)
-            
-        with open(fpath, mode='w') as file:
-            num_nodes = os.environ.get("SIZE", "NA")
-            GBS = os.environ.get("GBS", "NA")
-            IMG_H = os.environ.get("IMG_H", "NA")
-            method = os.environ.get("method", "NA")
-            log_dict['GBS'] = GBS
-            log_dict['IMG_H'] = IMG_H
-            log_dict['method'] = method
-            
-            if num_nodes not in results:
-                results[num_nodes] = [log_dict]
+        ## Log results to compare across different runs
+        if os.environ.get("LOG_RESULTS") == "1":
+            import json
+            fpath = 'logs/results.json'
+            if not os.path.exists(fpath):
+                pardir = os.path.dirname(fpath)
+                os.makedirs(pardir, exist_ok=True)
+                results = {}
             else:
-                results[num_nodes].append(log_dict)
-            json.dump(results, file)
-            # pprint.pprint(results)
+                with open(fpath, mode='r') as file:
+                    results = json.load(file)
+                
+            with open(fpath, mode='w') as file:
+                num_nodes = os.environ.get("SIZE", "NA")
+                GBS = os.environ.get("GBS", "NA")
+                IMG_H = os.environ.get("IMG_H", "NA")
+                method = os.environ.get("method", "NA")
+                log_dict['GBS'] = GBS
+                log_dict['IMG_H'] = IMG_H
+                log_dict['method'] = method
+
+                if num_nodes not in results:
+                    results[num_nodes] = [log_dict]
+                else:
+                    results[num_nodes].append(log_dict)
+                json.dump(results, file)
+                # pprint.pprint(results)
+
+            pprint.pprint(log_dict)
+            print("Pretrain completed.")
     exit()

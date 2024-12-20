@@ -11,11 +11,11 @@ if [[ $DATA_PATH_LOG ]]; then
 fi
 
 ## PYTHONPATH 
-SCRIPT_DIR=$(dirname $0 | xargs realpath)
+SCRIPT_DIR="/eagle/datascience/eku/Megatron-DeepSpeed_ViT/"
 cd $SCRIPT_DIR
-PYTHONPATH=$og_PYTHONPATH
-YUNCHANG=$SCRIPT_DIR/long-context-attention ## Custom yunchang (USP)
-YUNCHANG=$SCRIPT_DIR/DeepSpeed ## Temporary DeepSpeed
+# PYTHONPATH=$og_PYTHONPATH
+YUNCHANG="$SCRIPT_DIR/long-context-attention" ## Custom yunchang (USP)
+# YUNCHANG=$SCRIPT_DIR/DeepSpeed ## Temporary DeepSpeed
 PYTHONPATH="$YUNCHANG:$PYTHONPATH"
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Add local megatron path
 
@@ -69,6 +69,7 @@ CLASSIFIER_ARGS="
      --retro-encoder-hidden-dropout 0.0 \
      --no-masked-softmax-fusion \
      --no-bias-dropout-fusion \
+     --accumulate-allreduce-grads-in-fp32 \
 "
 ## TODO: does --no-async-tensor-model-parallel-allreduce \ make things faster? 
 
@@ -107,13 +108,53 @@ if [[ $ACT_CKPT -eq 1 ]]; then
      MEG_ARGS="--checkpoint-activations"
 fi
 
+## TODO: Add prescale grad option?
+# prescale_grad="true"
+
 echo "Launching mpiexec."
 # nsys="nsys profile -o $log_dir/$time --stats=true --show-output=true"
 nsys=""
 
-run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
-     --cpu-bind depth -d 16 \
-     $nsys python \
+# run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
+#      --cpu-bind depth -d 16 \
+#      $nsys python \
+#      ${SCRIPT_DIR}/pretrain_vision_classify.py \
+#      ${CLASSIFIER_ARGS} \
+#      ${DATA_ARGS} \
+#      ${OUTPUT_ARGS} \
+#      ${MEG_ARGS} \
+#      ${DS_ARGS}"
+
+export RDZV_HOST=$(hostname)
+export RDZV_PORT=29403
+export WORLD_SIZE=${NGPUS}
+num_node=$(wc -l < $PBS_NODEFILE)
+num_gpus_pernode=4
+
+# if [[ $SAVE_LOG_TO ]]; then
+#      SAVE_LOG_TO="|& tee $SAVE_LOG_TO"
+# fi
+
+# echo num_node: $num_node
+# echo NGPUS: $NGPUS
+# echo RDZV_HOST: $RDZV_HOST
+# echo RDZV_PORT: $RDZV_PORT
+# echo num_gpus_pernode: $num_gpus_pernode
+# exit 1
+     # ${SCRIPT_DIR}/pretrain_gpt.py \
+
+# --nproc_per_node 4 --rdzv_id $RANDOM --rdzv_backend c10d --rdzv_endpoint $head_node_ip:29500
+
+# run_cmd="torchrun --nproc-per-node 4 --rdzv_backend c10d --rdzv_endpoint "$RDZV_HOST:$RDZV_PORT" \
+#      ${SCRIPT_DIR}/pretrain_vision_classify.py \
+#      ${CLASSIFIER_ARGS} \
+#      ${DATA_ARGS} \
+#      ${OUTPUT_ARGS} \
+#      ${MEG_ARGS} \
+#      ${DS_ARGS}"
+
+run_cmd="mpiexec --verbose --envall -n ${num_node} -ppn 1 --cpu-bind depth -d ${NGPUS} \
+     python3 -m torch.distributed.run --rdzv_backend=c10d --rdzv_endpoint="$RDZV_HOST:$RDZV_PORT" --nnodes=${num_node} --nproc_per_node=${num_gpus_pernode} \
      ${SCRIPT_DIR}/pretrain_vision_classify.py \
      ${CLASSIFIER_ARGS} \
      ${DATA_ARGS} \

@@ -139,6 +139,10 @@ if [[ -z $ZERO ]]; then
     export ZERO=0
 fi
 
+if [[ -z $hpz ]]; then
+    export hpz=1
+fi
+
 cat <<EOF > "$DS_CONFIG_FNAME"
 {
   "train_batch_size": $GBS,
@@ -148,7 +152,8 @@ cat <<EOF > "$DS_CONFIG_FNAME"
   "zero_optimization": {
     "stage": $ZERO,
     "overlap_comm": true,
-    "allgather_partitions": false
+    "zero_hpz_partition_size": $hpz,
+    "contiguous_gradients": true
   },
 
   "gradient_clipping": 1.0,
@@ -311,7 +316,7 @@ elif [[ $VIT == "8B" ]]; then
     NLAYERS=32
     HSIZE=$((64 * 72))
     FFN_HSIZE=$((4 * HSIZE))
-    NUM_HEADS=32
+    NUM_HEADS=36
 elif [[ $VIT == "9B" ]]; then
     ## 9.2B
     NLAYERS=36
@@ -367,6 +372,60 @@ elif [[ $VIT == "28B" ]]; then
     HSIZE=$(( 64 * 106 ))
     FFN_HSIZE=$(( 4 * HSIZE ))
     NUM_HEADS=53
+elif [[ $VIT == "30B" ]]; then
+    ## 29.7B
+    NLAYERS=50
+    HSIZE=$((64 * 110))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=64
+elif [[ $VIT == "30+B" ]]; then
+    ## ??
+    NLAYERS=50
+    HSIZE=$((64 * 118))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=64
+elif [[ $VIT == "30++B" ]]; then
+    ## ??
+    NLAYERS=50
+    HSIZE=$((64 * 124))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=64
+elif [[ $VIT == "42B" ]]; then
+    ## 42.4B
+    NLAYERS=51
+    HSIZE=$((64 * 130))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=64
+elif [[ $VIT == "42+B" ]]; then
+    ## 42.4B
+    NLAYERS=51
+    HSIZE=8340
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=60
+elif [[ $VIT == "46B" ]]; then
+    ## 46.4B
+    NLAYERS=51
+    HSIZE=$((64 * 136))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=64
+elif [[ $VIT == "46+B" ]]; then
+    ## ??
+    NLAYERS=54
+    HSIZE=$((64 * 144))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=64
+elif [[ $VIT == "70B" ]]; then
+    ## 70B in GPT; in VIT?
+    NLAYERS=80
+    HSIZE=8192
+    FFN_HSIZE=28672
+    NUM_HEADS=64
+elif [[ $VIT == "112B" ]]; then
+    ## 112
+    NLAYERS=56
+    HSIZE=$((64 * 202))
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=64
 else
     echo "VIT not implemented"
     exit 1
@@ -393,8 +452,8 @@ export NLAYERS="${NLAYERS}"
 export HSIZE="${HSIZE}"
 export NUM_HEADS="${NUM_HEADS}"
 
-## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# ## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
+# export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # torch.distributed.DistBackendError: NCCL error in: /soft/applications/conda/2024-04-29/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:1970, unhandled cuda error (run with NCCL_DEBUG=INFO for details), NCCL version 2.20.5
 # [rank0]: ncclUnhandledCudaError: Call to CUDA function failed.

@@ -5,7 +5,7 @@ TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
 NHOSTS=$(wc -l < "${PBS_NODEFILE}")
 NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 
-## LIMIT GPU NUM (FOR 1-NODE EXPERIMENTS)
+## LIMIT GPUs VISIBLE (FOR 1-NODE EXPERIMENTS)
 if [ ${SIZE:-"-1"} -eq 1 ]; then
     CUDA_VISIBLE_DEVICES=0
     NGPU_PER_HOST=1
@@ -135,14 +135,6 @@ if [[ $NUM_ITERS ]]; then
     TRAIN_SAMPLES=$(($NUM_ITERS * $GBS))
 fi
 
-if [[ -z $ZERO ]]; then
-    export ZERO=0
-fi
-
-if [[ -z $hpz ]]; then
-    export hpz=1
-fi
-
 cat <<EOF > "$DS_CONFIG_FNAME"
 {
   "train_batch_size": $GBS,
@@ -150,9 +142,9 @@ cat <<EOF > "$DS_CONFIG_FNAME"
   "steps_per_print": 10,
 
   "zero_optimization": {
-    "stage": $ZERO,
+    "stage": ${ZERO:-0},
     "overlap_comm": true,
-    "zero_hpz_partition_size": $hpz,
+    "zero_hpz_partition_size": ${hpz:-1},
     "contiguous_gradients": true
   },
 
@@ -452,8 +444,8 @@ export NLAYERS="${NLAYERS}"
 export HSIZE="${HSIZE}"
 export NUM_HEADS="${NUM_HEADS}"
 
-# ## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
-# export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # torch.distributed.DistBackendError: NCCL error in: /soft/applications/conda/2024-04-29/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:1970, unhandled cuda error (run with NCCL_DEBUG=INFO for details), NCCL version 2.20.5
 # [rank0]: ncclUnhandledCudaError: Call to CUDA function failed.
@@ -468,7 +460,6 @@ if [[ -z $GLOBAL_MEAN_POOLING ]]; then
     SEQ_LEN=$((SEQ_LEN + 1)) ## Count clf token in seq length. 
 fi 
 export SEQ_LEN=$SEQ_LEN
-## TODO: update seq_len when you add the padded tokens features. 
 echo "Sequence length: ${SEQ_LEN}"
 
 ## LOGGING

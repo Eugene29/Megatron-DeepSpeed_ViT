@@ -30,8 +30,7 @@ get_machine() {
 get_machine
 
 if [[ $MACHINE == "aurora" ]]; then 
-     ## TODO: replace vit with conda base? 
-     . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate ## USER: change env accordingly (env has sam's ezpz repo + deepspeed tag: v0.15.1)
+     ## {Aurora: frameworks-2024.2.1_u1, Polaris: 2024-08-08 base}
      WORKING_DIR="/flare/Aurora_deployment/eku/Megatron-DeepSpeed_ViT/"
      WANDB_PROJECT_NAME="AuroraViT"
      EKU_PATH="/lus/flare/projects/Aurora_deployment/eku/data"

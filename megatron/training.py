@@ -1596,7 +1596,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         if torch.cuda.is_available():
             rank0_mem_fpt = int(get_gpu_memory()[0]) / 1000
         elif torch.xpu.is_available():
-            rank0_mem_fpt = -1
+            rank0_mem_fpt = torch.xpu.max_memory_reserved(0) / 1024**3
+            print_rank_0("WARNING: memory footprint is torch only, not system level (TODO: use xpu-smi?)")
         else:
             raise KeyError()
         log_dict = {
@@ -1623,9 +1624,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                      f"TFLOPS_per_gpu:{log_dict['TFLOPS_per_gpu']} \t"
                      f"Samples/Sec:{log_dict['samples_per_sec']} \t"
                      f"memory fpt (GiB):{log_dict['memory_fpt(GiB)']}")
-        
-        # if is_rank_0:
-        #     print(f"hello: rank {torch.distributed.get_rank()}")
         
     if profile_enabled:
         p.stop()

@@ -48,7 +48,7 @@ export FA=1
 
 ################################# EXAMPLE RUNS #################################
 # export MBS=2; export DATA=TOY; export factor=64; export VIT="13B"; #export hpz=4
-export MBS=1; export DATA=TOY; export factor=64; export VIT="28B"; #export hpz=4
+export MBS=1; export DATA=TOY; export factor=64; export VIT="22B"; #export hpz=4
 
 SP=1 ZERO=3 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_MBS${MBS}.log
 # SP=8 ZERO=3 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_MBS${MBS}.log

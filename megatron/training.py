@@ -2,7 +2,6 @@
 # Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.
 
 """Pretrain utilities."""
-import torch.distributed
 from torch.profiler import profile, record_function, ProfilerActivity
 
 from datetime import datetime
@@ -736,7 +735,8 @@ def train_step(forward_step_func, data_iterator,
         torch.manual_seed(33333)
         bs = 16
         w_and_h = int(os.environ["IMG_W"])
-        input_tensor = (torch.randn(bs, 3, w_and_h, w_and_h, dtype=torch.half, device=torch.cuda.current_device()), torch.tensor([1] * bs))
+        # input_tensor = (torch.randn(bs, 3, w_and_h, w_and_h, dtype=torch.half, device=torch.xpu.current_device()), torch.tensor([1] * bs))
+        input_tensor = (torch.randn(bs, 3, w_and_h, w_and_h, dtype=torch.half, device=dist.get_local_rank()), torch.tensor([1] * bs))
         losses_reduced = forward_backward_func(
             forward_step_func=forward_step_func,
             data_iterator=[iter([input_tensor])],
@@ -803,17 +803,17 @@ def train_step(forward_step_func, data_iterator,
 
     ## print gradient(make sure they are emptied and updated)
     ## check the updated weights (should be identical to DP)
-    if debug_mode:
-        with open(debug_fname, "a") as f:
-            f.write(f"\n\n\n\n-------------------------------------------\n[{seq_rank}] Gradients after step:")
-            for name, param in model[0].named_parameters():
-                grad = deepspeed.utils.safe_get_full_grad(param)
-                f.write(f"\nname: {name}, gradients (after step): {grad}, weights (after step): {param}")
-                after_weights.append(param)
-            max_memory = torch.cuda.max_memory_allocated()
-            f.write(f"\nmax_memory: {max_memory / (1024 ** 3)}")
+    # if debug_mode:
+    #     with open(debug_fname, "a") as f:
+    #         f.write(f"\n\n\n\n-------------------------------------------\n[{seq_rank}] Gradients after step:")
+    #         for name, param in model[0].named_parameters():
+    #             grad = deepspeed.utils.safe_get_full_grad(param)
+    #             f.write(f"\nname: {name}, gradients (after step): {grad}, weights (after step): {param}")
+    #             after_weights.append(param)
+    #         max_memory = torch.xpu.max_memory_allocated()
+    #         f.write(f"\nmax_memory: {max_memory / (1024 ** 3)}")
         
-        raise KeyboardInterrupt("Ran one batch of toy-dataset")
+    #     raise KeyboardInterrupt("Ran one batch of toy-dataset")
 
     # Gather params.
     if not args.deepspeed and update_successful:
@@ -1076,7 +1076,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             writer.add_scalar('seqlen/random_ltd_reserved_length vs tokens', args.random_ltd_reserved_length,
                               args.consumed_train_tokens, x_axis_tokens)
         if args.log_memory_to_tensorboard:
-            mem_stats = torch.cuda.memory_stats()
+            mem_stats = get_accelerator().memory_stats()
             writer.add_scalar(
                 "mem-reserved-bytes",
                 mem_stats["reserved_bytes.all.current"],
@@ -1323,8 +1323,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             month_and_day = datetime.now().strftime("%m_%d")
             log_dir = f"./trace_vit/{month_and_day}/"
             os.makedirs(log_dir, exist_ok=True)
-            rank = torch.cuda.current_device()
-            WS = torch.distributed.get_world_size()
+            rank = dist.get_rank()
+            WS = dist.get_world_size()
             FA = 'FA_' if 'FA' in os.environ else ""
             SP = "SP" + os.environ["SP"] + "_"
             if "TPSP" in os.environ:
@@ -1355,13 +1355,18 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             else:
                 packed = ""
 
-            if torch.distributed.get_rank() == 0:
-                p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{VIT3D}{VIT}{IMG}{FA}{SP}{TP}{ZERO}{ACT}rank{rank}.json")
+            if rank == 0:
+                p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
 
         print_rank_0(f"PROFILING...")
+        if torch.cuda.is_available():
+            ProfilerActivityGPU = getattr(ProfilerActivity, "CUDA")
+        elif torch.xpu.is_available():
+            ProfilerActivityGPU = getattr(ProfilerActivity, "XPU")
+            
         p = torch.profiler.profile(
             schedule=torch.profiler.schedule(wait=36, warmup=2, active=2),
-            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            activities=[ProfilerActivity.CPU, ProfilerActivityGPU],
             # on_trace_ready=torch.profiler.tensorboard_trace_handler("/home/eku/aevard/polaris-trial/jobscripts/log/"),
             record_shapes=True,
             with_stack=True,
@@ -1582,21 +1587,18 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         if profile_enabled:
             p.step()
-            deepspeed.comm.log_summary(show_straggler=False)
-            # print() ## log comm (decrease perf slightly)
+        deepspeed.comm.log_summary(show_straggler=False) ## log comm (decrease perf slightly)
 
 
         step_time = time.time() - strt
-        # max_memory_used = torch.cuda.max_memory_allocated() / (1024**3)
-        ## TODO: Why is it that we cannot get close to 40 GB of memory usage? 
-        # dev = deepspeed.accelerator.get_accelerator().current_device()
-        # memory_tensor = torch.tensor(max_memory_used, device=dev)
-        # print(f"memory_tensor: {memory_tensor}")
-        # dist.all_reduce(memory_tensor, op=dist.ReduceOp.MAX)
-        # memory_tensor = max_memory_used
         samples_per_sec = global_batch_size / step_time
         Tflops_per_gpu = tot_Tflops / args.world_size
-        rank0_mem_fpt = int(get_gpu_memory()[0]) / 1000
+        if torch.cuda.is_available():
+            rank0_mem_fpt = int(get_gpu_memory()[0]) / 1000
+        elif torch.xpu.is_available():
+            rank0_mem_fpt = -1
+        else:
+            raise KeyError()
         log_dict = {
             "iteration": iteration,
             "time": step_time,
@@ -1608,7 +1610,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         }
         log_dict = {k:round(v, 2) for k, v in log_dict.items()}
 
-        if torch.distributed.get_rank() == 0:
+        if dist.get_rank() == 0:
             for k,v in log_dict.items(): ## Store the maximum and log it at the end of training.
                 prev_v = getattr(args, k, None)
                 if prev_v is None or prev_v < v:

@@ -2,39 +2,109 @@
 
 ## ENVIRONMENT
 echo "Launching Megatron Deepspeed VIT."
-TZ="America/Chicago" date ## Q. interesting bash command, the command is after the argument?
-module load conda
-conda activate
+# TZ="America/Chicago" date ## Q. interesting bash command, the command is after the argument?
 # . /eagle/projects/datascience/eku/venv/vit/bin/activate ## Virtual ENV 
 
-## (debug) If DATA_PATH_LOG is passed, will record input tensors consumed
-if [[ $DATA_PATH_LOG ]]; then
-     > $DATA_PATH_LOG 
+get_machine() {
+    machine=$(hostname)
+    if [[ $(hostname) == x4* ]]; then
+        machine="aurora"
+    elif [[ $(hostname) == x1* ]]; then
+        machine="sunspot"
+    elif [[ $(hostname) == x3* ]]; then
+        if [[ "${PBS_O_HOST}" == sirius* ]]; then
+            machine="sirius"
+        else
+            machine="polaris"
+        fi
+    elif [[ $(hostname) == sophia* ]]; then
+        machine="sophia"
+    elif [[ $(hostname) == nid* ]]; then
+        machine="perlmutter"
+    else
+        echo "Unknown MACHINE. Setting MACHINE to $(hostname) and continuing..."
+    fi
+    export MACHINE="${machine}"
+    echo "Running on: $Machine"
+}
+get_machine
+
+if [[ $MACHINE == "aurora" ]]; then 
+     ## TODO: replace vit with conda base? 
+     . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate ## USER: change env accordingly (env has sam's ezpz repo + deepspeed tag: v0.15.1)
+     WORKING_DIR="/flare/Aurora_deployment/eku/Megatron-DeepSpeed_ViT/"
+     WANDB_PROJECT_NAME="AuroraViT"
+     EKU_PATH="/lus/flare/projects/Aurora_deployment/eku/data"
+     FA_VERSION="--use-flash-attn-builder"
+     NGPU_PER_HOST=12
+     set_ccl_vars_on_aurora() {
+          export CCL_KVS_MODE=mpi
+          export CCL_CONFIGURATION_PATH=""
+          export CCL_CONFIGURATION=cpu_gpu_dpcpp
+          export CCL_KVS_CONNECTION_TIMEOUT=3600
+          export FI_CXI_RX_MATCH_MODE=hybrid
+          export CCL_BCAST=double_tree
+
+          export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
+          export CCL_PROCESS_LAUNCHER=pmix # Required by Aurora mpich
+          export FI_PROVIDER=cxi           # Required by Aurora mpich
+          export PALS_PMI=pmix             # Required by Aurora mpich
+          export CCL_ATL_TRANSPORT=mpi     # Required by Aurora mpich
+          export TORCH_LLM_ALLREDUCE=1
+          export CCL_SYCL_ESIMD=1
+          export CCL_ALLGATHERV_MEDIUM_SIZE_THRESHOLD=0 # Required by current oneCCL (MLSL-2881)
+          export CCL_ENABLE_SYCL_KERNELS=1
+          export CCL_WORKER_AFFINITY=5,13,21,29,37,45,57,65,73,81,89,97
+          export CCL_ZE_CACHE_OPEN_IPC_HANDLES_THRESHOLD=32768
+          export FI_CXI_DEFAULT_CQ_SIZE=1048576
+          export FI_CXI_RX_MATCH_MODE=hybrid
+          export CCL_BCAST=double_tree
+     }
+     set_ccl_vars_on_aurora ## Gordon Bell Run
+     export CCL_ALLGATHERV=topo
+     export CCL_ALLREDUCE=topo
+     export CCL_BCAST=double_tree
+     export CCL_BARRIER=ring
+     export CCL_ALLREDUCE_SCALEOUT=ring
+     export CCL_ALLGATHER_SCALEOUT=ring
+     export CCL_ALLGATHERV_SCALEOUT=ring
+elif [[ $MACHINE == "polaris" ]]; then 
+     module load conda
+     conda activate
+     WORKING_DIR="/eagle/datascience/eku/Megatron-DeepSpeed_ViT"
+     WANDB_PROJECT_NAME="PolarisViT"
+     EKU_PATH="/eagle/datascience/eku/data"
+     FA_VERSION="--use-flash-attn-v2"
+     NGPU_PER_HOST=4
+     ## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
+     export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+     # torch.distributed.DistBackendError: NCCL error in: /soft/applications/conda/2024-04-29/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:1970, unhandled cuda error (run with NCCL_DEBUG=INFO for details), NCCL version 2.20.5
+     # [rank0]: ncclUnhandledCudaError: Call to CUDA function failed.
+     # export NCCL_DEBUG=INFO
+else
+     echo "Not Impelmented Error for $MACHINE Machine"; exit 1
 fi
 
 ## PYTHONPATH 
-SCRIPT_DIR="/eagle/datascience/eku/Megatron-DeepSpeed_ViT"
-YUNCHANG="$SCRIPT_DIR/long-context-attention" ## Custom yunchang (USP)
-DEEPSPEED="$SCRIPT_DIR/DeepSpeed" ## Custom DeepSpeed
+# WORKING_DIR=$(dirname ${BASH_SOURCE[0]})
+cd $WORKING_DIR
+YUNCHANG="$WORKING_DIR/long-context-attention" ## Custom yunchang (USP)
+DEEPSPEED="$WORKING_DIR/DeepSpeed" ## Custom DeepSpeed
 PYTHONPATH="${DEEPSPEED:-}:$YUNCHANG:$PYTHONPATH"
-export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Add local megatron path
-cd $SCRIPT_DIR
-
+export PYTHONPATH="${WORKING_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## HOST NODE
 # export MASTER_ADDR=localhost
 # export MASTER_PORT=6000
 
 ## ARGUMENTS
-source "${SCRIPT_DIR}/mds_args.sh"
-ds_json=${SCRIPT_DIR}/${DS_CONFIG_FNAME}
-
-echo "Script Directory: ${SCRIPT_DIR}"
-echo "PYTHON PATH: $PYTHONPATH"
+source "${WORKING_DIR}/mds_args.sh"
+ds_json=${WORKING_DIR}/${DS_CONFIG_FNAME}
+echo "Working Directory: ${WORKING_DIR}"
+echo "PYTHONPATH: $PYTHONPATH"
 
 # Training and validation paths should each point to a folder where each
 # sub-folder contains a collection of images in jpg or png format
 # e.g. If using imagenet, one train image might be, train_data/n01688243/n01688243_11301.JPEG
-
 CLASSIFIER_ARGS="
      $no_pipeline_parallel \
      --zero-stage ${ZERO} \
@@ -75,13 +145,13 @@ CLASSIFIER_ARGS="
 ## TODO: does --no-async-tensor-model-parallel-allreduce \ make things faster? 
 
 if [[ $FA -eq 1 ]]; then
-     CLASSIFIER_ARGS="--use-flash-attn-v2 $CLASSIFIER_ARGS"
+     CLASSIFIER_ARGS="$FA_VERSION $CLASSIFIER_ARGS"
 fi
 if [[ $NUM_CHANNELS ]]; then
      CLASSIFIER_ARGS="--num-channels $NUM_CHANNELS $CLASSIFIER_ARGS"
 fi
 if [[ $TPSP -eq 1 ]]; then
-     export CUDA_DEVICE_MAX_CONNECTIONS=1 ## TODO: What is this??
+     export CUDA_DEVICE_MAX_CONNECTIONS=1
      CLASSIFIER_ARGS="--sequence-parallel $CLASSIFIER_ARGS"
 fi
 
@@ -97,7 +167,7 @@ DATA_ARGS="
 OUTPUT_ARGS="
      --log-interval 5 \
      --eval-interval $EVAL_INTERVAL \
-     --wandb-project PolarisViT \
+     --wandb-project $WANDB_PROJECT_NAME \
      --save-interval 2500 \
 "
 DS_ARGS="
@@ -113,45 +183,50 @@ fi
 # prescale_grad="true"
 
 echo "Launching mpiexec."
-# nsys="nsys profile -o $log_dir/$time --stats=true --show-output=true"
-nsys=""
-
-# run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
-#      --cpu-bind depth -d 16 \
-#      $nsys python \
-#      ${SCRIPT_DIR}/pretrain_vision_classify.py \
-#      ${CLASSIFIER_ARGS} \
-#      ${DATA_ARGS} \
-#      ${OUTPUT_ARGS} \
-#      ${MEG_ARGS} \
-#      ${DS_ARGS}"
-
-export RDZV_HOST=$(hostname)
-export RDZV_PORT=$RANDOM
-export WORLD_SIZE=${NGPUS}
-num_node=$(wc -l < $PBS_NODEFILE)
-num_gpus_pernode=4
-
+## If needed to direct stdout/err
 # if [[ $SAVE_LOG_TO ]]; then
 #      SAVE_LOG_TO="|& tee $SAVE_LOG_TO"
 # fi
+# nsys="nsys profile -o $log_dir/$time --stats=true --show-output=true"
+nsys=""
+if [[ $MACHINE == "aurora" ]]; then
+          # --cpu-bind depth -d ${NGPUS} \
+     ## TODO: Why does cpu bind depth 16 works but not 24 for 2 nodes? 
+     ## TODO: torchrun with mpiexec breaks but works great on polaris, why? 
+     run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
+          --cpu-bind depth -d 16 \
+          $nsys python \
+          ${WORKING_DIR}/pretrain_vision_classify_ezpz.py \
+          ${CLASSIFIER_ARGS} \
+          ${DATA_ARGS} \
+          ${OUTPUT_ARGS} \
+          ${MEG_ARGS} \
+          ${DS_ARGS}"
+elif [[ $MACHINE == "polaris" ]]; then
+     export RDZV_HOST=$(hostname)
+     export RDZV_PORT=$RANDOM
+     # export WORLD_SIZE=${NGPUS} ## Do we really need this? 
+     # num_node=$(wc -l < $PBS_NODEFILE)
+     run_cmd="mpiexec --verbose --envall -n ${NHOSTS} -ppn 1 --cpu-bind depth -d ${NGPUS} \
+          python3 -m torch.distributed.run --rdzv_backend=c10d --rdzv_endpoint="$RDZV_HOST:$RDZV_PORT" --nnodes=${NHOSTS} --nproc_per_node=${NGPU_PER_HOST} \
+          ${WORKING_DIR}/pretrain_vision_classify.py \
+          ${CLASSIFIER_ARGS} \
+          ${DATA_ARGS} \
+          ${OUTPUT_ARGS} \
+          ${MEG_ARGS} \
+          ${DS_ARGS}"
+else
+     echo "machine keyerror"; exit 1
+fi
 
+## Vanilla torchrun. Doesn't work atm on polaris.
 # run_cmd="torchrun --nproc-per-node 4 --rdzv_backend c10d --rdzv_endpoint "$RDZV_HOST:$RDZV_PORT" \
-#      ${SCRIPT_DIR}/pretrain_vision_classify.py \
+#      ${WORKING_DIR}/pretrain_vision_classify.py \
 #      ${CLASSIFIER_ARGS} \
 #      ${DATA_ARGS} \
 #      ${OUTPUT_ARGS} \
 #      ${MEG_ARGS} \
 #      ${DS_ARGS}"
-
-run_cmd="mpiexec --verbose --envall -n ${num_node} -ppn 1 --cpu-bind depth -d ${NGPUS} \
-     python3 -m torch.distributed.run --rdzv_backend=c10d --rdzv_endpoint="$RDZV_HOST:$RDZV_PORT" --nnodes=${num_node} --nproc_per_node=${num_gpus_pernode} \
-     ${SCRIPT_DIR}/pretrain_vision_classify.py \
-     ${CLASSIFIER_ARGS} \
-     ${DATA_ARGS} \
-     ${OUTPUT_ARGS} \
-     ${MEG_ARGS} \
-     ${DS_ARGS}"
 
 echo "run cmd: $run_cmd"
 eval $run_cmd

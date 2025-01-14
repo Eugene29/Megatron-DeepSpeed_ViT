@@ -2,8 +2,9 @@
 
 """Pretrain VIT"""
 # from mpi4py import MPI
-import torch.distributed as dist
-import torch.distributed
+# import torch.distributed as dist
+# import torch.distributed
+import deepspeed.comm as dist
 # comm = MPI.COMM_WORLD
 # comm.Barrier()
 

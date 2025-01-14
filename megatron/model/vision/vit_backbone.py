@@ -16,6 +16,7 @@ from megatron.model.utils import (
     init_method_normal,
     # scaled_init_method_normal,
 )
+from deepspeed import comm as dist
 from megatron.core import parallel_state as mpu
 from megatron.model.module import MegatronModule
 from megatron import get_args, print_rank_0
@@ -201,14 +202,14 @@ class VitBackbone(MegatronModule):
                     torch.randn(1, CLASS_TOKEN_LENGTH, self.hidden_size)
                 )
                 torch.nn.init.zeros_(self.cls_token)
-            self.position_ids = torch.arange(self.seq_length).expand(1, -1).cuda()
+            self.position_ids = torch.arange(self.seq_length, device=dist.get_local_rank()).expand(1, -1)
             
             # Linear encoder
             self.linear_encoder = torch.nn.Linear(
                 self.flatten_dim, self.hidden_size
             )
 
-            # embedding
+            # Embedding
             self.pos_encoding = args.pos_encoding
             if self.pos_encoding:
                 ## TODO: Understanding the arguments behind pos encoding and optimize it for longer sequences. 
@@ -230,9 +231,7 @@ class VitBackbone(MegatronModule):
                     pe[:, 1::2] = torch.cos(position.float() * div_term)
                     return pe
 
-                from deepspeed.accelerator import get_accelerator
-                dev = get_accelerator().current_device() ## NOTE: although rank are unique and range from 0~num_devices, device names should be across nodes. 
-                pos_encoding = positionalencoding1d(self.hidden_size, self.seq_length, dev)
+                pos_encoding = positionalencoding1d(self.hidden_size, self.seq_length, dist.get_local_rank())
 
             else:
                 self.position_embeddings = torch.nn.Embedding(

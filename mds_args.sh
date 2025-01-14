@@ -3,15 +3,16 @@
 ## COMMUNICATION
 TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
 NHOSTS=$(wc -l < "${PBS_NODEFILE}")
-NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
 
 ## LIMIT GPUs VISIBLE (FOR 1-NODE EXPERIMENTS)
 if [ ${SIZE:-"-1"} -eq 1 ]; then
     CUDA_VISIBLE_DEVICES=0
+    ZE_AFFINITY_MASK=0
     NGPU_PER_HOST=1
     NGPUS=1
 elif [ ${SIZE:-"-1"} -eq 2 ]; then
     CUDA_VISIBLE_DEVICES=0,1
+    ZE_AFFINITY_MASK=0,1
     NGPU_PER_HOST=2
     NGPUS=2
 fi
@@ -31,19 +32,22 @@ elif [ ${DEBUG:-""} == "DP" ]; then
     # export DEBUG_FNAME=None
     > $DEBUG_FNAME
 fi
+## (debug) If DATA_PATH_LOG is passed, will record input tensors consumed
+if [[ $DATA_PATH_LOG ]]; then
+     > $DATA_PATH_LOG 
+fi
 
 export SP=${SP:-1}
 export PP=${PP:-1}
 export TP=${TP:-1}
-if [ $PP -eq 1 ]; then 
-    export no_pipeline_parallel=--no-pipeline-parallel
-fi
-
 export TSTAMP="${TSTAMP}"
 export NHOSTS="${NHOSTS}"
 export NGPU_PER_HOST="${NGPU_PER_HOST}"
 export PROJECT="datascience"
 export NGPUS=$(($NHOSTS * $NGPU_PER_HOST))
+if [ $PP -eq 1 ]; then 
+    export no_pipeline_parallel=--no-pipeline-parallel
+fi
 
 ## DATA
 export DATA=${DATA:-'CIFAR'}
@@ -54,17 +58,14 @@ DP=$(($NGPUS / $MP))
 if [[ $GBS ]]; then
     MBS=$(($GBS / $DP))
 elif [[ $MBS ]]; then
-    MBS=$(($MBS * $MP)) ## Maintain GBS
+    # MBS=$(($MBS * $MP)) ## Maintain GBS across DP and MP
     GBS=$(($MBS * $DP)) 
 else
     printf "\nERROR: you need to pass in either MBS or GBS\n"; exit 1
 fi
-
-## TODO: download and parse data if eagle is unavailable. 
-AEVARD_PATH=/eagle/datascience/vsastry/from_andre/aevard/datasets
-EKU_PATH=/eagle/datascience/eku/data
+ 
 if [[ $DATA == 'IMNET' ]]; then
-    echo "TRAINING ON IMNET"
+    echo "TRAINING ON IMNET: Probably broken"
     # DATA_PATH="~/aevard/datasets/imnet-20/train ~/aevard/datasets/imnet-20/valid"
     DATA_PATH="$AEVARD_PATH/imnet-20/train $AEVARD_PATH/imnet-20/valid"
     NUM_CLASSES=20
@@ -80,7 +81,6 @@ if [[ $DATA == 'IMNET' ]]; then
     TRAIN_SAMPLES=$(($NUM_EPOCHS * $TRAIN_SIZE)) ##TODO: Why does IMNET only have 24912 image samples? 
     LR_WARMUP_SAMPLES=1000
     DS_CONFIG_FNAME="IMNET.json"
-
 elif [[ $DATA == 'CIFAR' ]]; then
     echo "TRAINING ON CIFAR"
     DATA_PATH="$EKU_PATH/CIFAR10/train $EKU_PATH/CIFAR10/valid"
@@ -100,11 +100,9 @@ elif [[ $DATA == 'CIFAR' ]]; then
     TRAIN_SAMPLES=$(($NUM_EPOCHS * $TRAIN_SIZE))
     LR_WARMUP_SAMPLES=0
     DS_CONFIG_FNAME="CIFAR.json"
-
 elif [[ $DATA == 'TOY' ]]; then
     echo "TRAINING ON TOY DATASET"
     ##Toy Dataset
-    # DATA_PATH="~/aevard/datasets/CIFAR10/train ~/aevard/datasets/CIFAR10/valid"
     DATA_PATH="$EKU_PATH/CIFAR10/train $EKU_PATH/CIFAR10/valid"
     NUM_CLASSES=20
     PATCH_DIM=16
@@ -163,7 +161,15 @@ cat <<EOF > "$DS_CONFIG_FNAME"
   "wall_clock_breakdown" : false
 }
 EOF
+# ,
+#   "comms_logger": {
+#     "enabled": true,
+#     "verbose": false,
+#     "prof_all": true,
+#     "debug": false
+#   }
 
+## Below configs seems to not work.
 #  "activation_checkpointing": {
 #     "partition_activations": false,
 #     "cpu_checkpointing": false,
@@ -172,8 +178,6 @@ EOF
 #     "synchronize_checkpoint_boundary": false,
 #     "profile": false
 #     }
-## TODO: add optimal activation_checkpointing config
-
 
 # cat <<EOF > "$DS_CONFIG_FNAME"
 # {
@@ -214,20 +218,11 @@ EOF
         # "allgather_partitions": true,
         # "mics_hierarchical_params_gather": true
 
-## TODO: add optimal activation_checkpointing config
-#  "activation_checkpointing": {
-#     "partition_activations": false,
-#     "cpu_checkpointing": false,
-#     "contiguous_memory_optimization": false,
-#     "number_checkpoints": null,
-#     "synchronize_checkpoint_boundary": false,
-#     "profile": false
-#     }
-
 ## MODEL CONFIGURATION ##
-
 export VIT=${VIT:-"LARGE"}
 echo Using VIT-$VIT
+# ATT_DROPOUT=0.1
+# H_DROPOUT=0.1
 if [[ $VIT == "TINY" ]]; then
     ## ViT-TINY (10M)
     NLAYERS=6
@@ -258,27 +253,17 @@ elif [[ $VIT == "GIANT" ]]; then
     HSIZE=1664
     FFN_HSIZE=8192
     NUM_HEADS=16
-    # ATT_DROPOUT=0.1
-    # H_DROPOUT=0.1
 elif [[ $VIT == "ENORMOUS" ]]; then
     NLAYERS=56
     HSIZE=1792
     FFN_HSIZE=15360
     NUM_HEADS=16
-    # ATT_DROPOUT=0.1
-    # H_DROPOUT=0.1
 elif [[ $VIT == "4B" ]]; then
     ## 3.8B
     NLAYERS=48
     HSIZE=2560
     FFN_HSIZE=$((4 * HSIZE))
     NUM_HEADS=32
-# elif [[ $VIT == "1B" ]]; then
-#     ## 3.8B
-#     NLAYERS=24
-#     HSIZE=3072
-#     FFN_HSIZE=$((4 * HSIZE))
-#     NUM_HEADS=32
 elif [[ $VIT == "3B" ]]; then
     ## 3.8B
     NLAYERS=24
@@ -317,7 +302,6 @@ elif [[ $VIT == "9B" ]]; then
     NUM_HEADS=32
 elif [[ $VIT == "13B" ]]; then
     ## GPT-3 13B in VIT 12.6B (?)
-    # model_size=13
     NLAYERS=40
     HSIZE=5120
     FFN_HSIZE=$((4 * HSIZE))
@@ -444,13 +428,6 @@ export NLAYERS="${NLAYERS}"
 export HSIZE="${HSIZE}"
 export NUM_HEADS="${NUM_HEADS}"
 
-## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-
-# torch.distributed.DistBackendError: NCCL error in: /soft/applications/conda/2024-04-29/pytorch/torch/csrc/distributed/c10d/ProcessGroupNCCL.cpp:1970, unhandled cuda error (run with NCCL_DEBUG=INFO for details), NCCL version 2.20.5
-# [rank0]: ncclUnhandledCudaError: Call to CUDA function failed.
-# export NCCL_DEBUG=INFO
-
 if [[ $VIT3D ]]; then
     SEQ_LEN=$((IMG_H * IMG_W * IMG_D / PATCH_DIM**3))  
 else
@@ -461,8 +438,3 @@ if [[ -z $GLOBAL_MEAN_POOLING ]]; then
 fi 
 export SEQ_LEN=$SEQ_LEN
 echo "Sequence length: ${SEQ_LEN}"
-
-## LOGGING
-RUN_NAME="N${NUM_NODES}-${TSTAMP}"
-RUN_NAME="VIT-CLASS-${RUN_NAME}"
-export RUN_NAME="${RUN_NAME}"

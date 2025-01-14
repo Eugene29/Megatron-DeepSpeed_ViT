@@ -610,8 +610,8 @@ class ParallelAttention(MegatronModule):
                 gather_output=False)
 
         # Currently FlashAttention only works with causal mask
-        self.causal = args.vision_backbone_type == "None" ## TODO: Double check that this is none when using LLMs
-        print(f"causal is set to: {self.causal}")
+        self.causal = args.vision_backbone_type == "None" ## TODO: Double check that this is none when using LLMs. Should be args.vision_training instead...
+        # print(f"causal is set to: {self.causal}")
         if args.USP_ring or args.USP_hybrid:
             pass
         elif self.use_flash_attn_triton:

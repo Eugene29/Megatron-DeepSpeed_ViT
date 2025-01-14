@@ -1,8 +1,8 @@
 # SCRIPT_PTH=/eagle/datascience/eku/Megatron-DeepSpeed_ViT/mult_mds.sh ## Use this if submitting this script as qsub (also needed if using batch scripts?)
-SCRIPT_PTH=${BASH_SOURCE[0]}
-WORKING_DIR=$(dirname $SCRIPT_PTH | xargs realpath)
-LOGDIR=$WORKING_DIR/logs
-MAIN_SCRIPT=$WORKING_DIR/mds_launch.sh
+# SCRIPT_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
+SCRIPT_DIR=$(dirname /lus/flare/projects/Aurora_deployment/eku/Megatron-DeepSpeed_ViT/mult_mds.sh | xargs realpath)
+LOGDIR=$SCRIPT_DIR/logs
+MAIN_SCRIPT=$SCRIPT_DIR/mds_launch.sh
 mkdir -p $LOGDIR
 
 ################################ ARGUMENTS ################################

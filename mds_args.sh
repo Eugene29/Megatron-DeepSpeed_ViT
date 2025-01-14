@@ -161,6 +161,14 @@ cat <<EOF > "$DS_CONFIG_FNAME"
   "wall_clock_breakdown" : false
 }
 EOF
+#   "data_types": {
+#     "grad_accum_dtype": "fp32" 
+#   },
+
+#   "bfloat16": {
+#     "enabled": true,
+#     "loss_scale": 1.0
+#   },
 # ,
 #   "comms_logger": {
 #     "enabled": true,

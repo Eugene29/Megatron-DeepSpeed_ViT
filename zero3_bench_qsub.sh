@@ -31,9 +31,7 @@ arr_num_nodes=( 16 32 )
 
 # wait_til_queue_is_available
 
-
-# for i in ${!arr_num_nodes[@]}; do
-for (( i=${#arr_num_nodes[@]}-1; i>=0; i-- )); do
+for (( i=${#arr_num_nodes[@]}-1; i>=0; i-- )); do ## submit from the largest to smallest num nodes
     if [[ $num_nodes -lt 10 ]]; then
         QUEUE="debug-scaling"
         # QUEUE="debug" ##

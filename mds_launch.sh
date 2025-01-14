@@ -88,9 +88,9 @@ fi
 ## PYTHONPATH 
 # WORKING_DIR=$(dirname ${BASH_SOURCE[0]})
 cd $WORKING_DIR
-YUNCHANG="$WORKING_DIR/long-context-attention" ## Custom yunchang (USP)
-DEEPSPEED="$WORKING_DIR/DeepSpeed" ## Custom DeepSpeed
-PYTHONPATH="${DEEPSPEED:-}:$YUNCHANG:$PYTHONPATH"
+YUNCHANG="${WORKING_DIR}/long-context-attention" ## Custom yunchang (USP)
+DEEPSPEED="${WORKING_DIR}/DeepSpeed" ## Custom DeepSpeed
+PYTHONPATH="${DEEPSPEED}:${YUNCHANG}:${PYTHONPATH}"
 export PYTHONPATH="${WORKING_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## HOST NODE
 # export MASTER_ADDR=localhost

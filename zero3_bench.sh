@@ -1,7 +1,6 @@
-DIR=$(dirname "/eagle/datascience/eku/Megatron-DeepSpeed_ViT/zero3_bench.sh")
-LAUNCH_SCRIPT=$(realpath $DIR/mds_launch.sh)
+DIR=$(dirname "/lus/flare/projects/Aurora_deployment/eku/Megatron-DeepSpeed_ViT/zero3_bench.sh" | xargs realpath)
+LAUNCH_SCRIPT=$DIR/mds_launch.sh
 LOG_DIR="$DIR/logs"
-PROJ="datascience"
 mkdir -p $LOG_DIR
 
 ## Model Variables
@@ -15,13 +14,13 @@ export VIT3D=1
 export ZERO=3
 export FA=1
 
-## SAFE RUN
-LOG_PTH="$LOG_DIR/n${num_nodes}_VIT${safe_model_size}.log"
-VIT=$safe_model_size bash $LAUNCH_SCRIPT |& tee $LOG_PTH
-## RISKY RUN
-LOG_PTH="$LOG_DIR/n${num_nodes}_VIT${risky_model_size}.log"
-VIT=$risky_model_size bash $LAUNCH_SCRIPT |& tee $LOG_PTH
+## SAFER RUN
+VIT=$safer_model_size bash $LAUNCH_SCRIPT |& tee "$LOG_DIR/n${num_nodes}_VIT${safer_model_size}_GBS${GBS}.log"
 
-## INTERACTIVE LAUNCH (TODO)
-# arr_num_nodes=(2)
-# arr_num_nodes=(2)
+## SAFE RUN
+VIT=$safe_model_size bash $LAUNCH_SCRIPT |& tee "$LOG_DIR/n${num_nodes}_VIT${safe_model_size}_GBS${GBS}.log"
+
+## RISKY RUN
+VIT=$risky_model_size bash $LAUNCH_SCRIPT |& tee "$LOG_DIR/n${num_nodes}_VIT${risky_model_size}_GBS${GBS}.log"
+
+# ## hpz RUN (SCALE OUT)

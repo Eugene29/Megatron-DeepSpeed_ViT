@@ -224,9 +224,10 @@ if __name__ == "__main__":
     # WORLD_SIZE = ez.get_world_size()
     # LOCAL_RANK = ez.get_local_rank()
     # DEVICE_TYPE = ez.dist.get_torch_device_type()
-    local_rank = int(os.environ["LOCAL_RANK"])
-    if torch.cuda.is_available():
-        torch.cuda.set_device(local_rank)
+
+    # local_rank = int(os.environ["LOCAL_RANK"])
+    # if torch.cuda.is_available():
+    #     torch.cuda.set_device(local_rank)
 
     # RANK = comm.Get_rank()
     # WORLD_SIZE = comm.Get_size()
@@ -250,17 +251,19 @@ if __name__ == "__main__":
             args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
         )
     except RuntimeError as e:
+        ## Forcefully kill processes. Helps quickly end runs, at least on polaris
         if "CUDA out of memory" in str(e) or "out of memory" in str(e):
         # if "CUDA out of memory" in str(e):
             print_rank_0("\nCUDA OUT OF MEMORY. Forcefully terminating...\n")
-            os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
+            print_rank_0(f"Original error message was: {str(e)}")
+        elif "longjmp causes uninitialized stack frame" in str(e):
+            print_rank_0("\longjmp(?) error. Forcefully terminating...\n")
+            print_rank_0(f"Original error message was: {str(e)}")
         else:
             raise
-    # except Exception as e:
-    #     print_rank_0("\nForcefully terminating...\n")
-    #     print(f"\nERROR MESSAGE: {str(e)}\n")
-    #     os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
 
+        # if dist.get_rank == 0:
+        os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
     dist.barrier() ## prevent accidental saving? 
     print_rank_0(f"tot train time: {time.time() - train_strt}")
 
@@ -303,5 +306,5 @@ if __name__ == "__main__":
                 # pprint.pprint(results)
 
             pprint.pprint(log_dict)
-            print("Pretrain completed.")
-    exit()
+        print("Pretrain completed.", flush=True)
+    # exit()

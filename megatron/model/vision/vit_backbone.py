@@ -189,8 +189,12 @@ class VitBackbone(MegatronModule):
             self.flatten_dim = self.patch_dim * self.patch_dim * self.patch_dim * args.num_channels
             self.seq_length = int(os.environ["SEQ_LEN"])
 
-        # if self.ds_sequence_parallel:
-            # sp = mpu.get_sequence_parallel_world_size()
+        if self.ds_sequence_parallel:
+            sp = mpu.get_sequence_parallel_world_size()
+            if not self.seq_length % sp == 0:
+                print("beaware, your sequence is uneven")
+            if not (args.num_attention_heads % sp == 0 and args.num_attention_heads > sp):
+                print("beaware, your head count is invalid (i.e. (head count indivisible by SP) or (SP > head count)")
             # assert self.seq_length % sp == 0
             # assert args.num_attention_heads % sp == 0, "Num head is the max sp degree for Ulysses"
 
@@ -244,6 +248,9 @@ class VitBackbone(MegatronModule):
             sub_seq_length = self.seq_length // sp
             self.remainder_seq_len = self.seq_length % sp
 
+            ## For pos_encoding, sub_seq_idx need to include clf_token
+            ## For the actual sequence, sub_seq_idx need to eclude clf_token 
+            ## Therefore, reduce the sub_sequence of first rank by 1 for clf token
             ## Cleaner code: reduce redundancy of code below
             if self.remainder_seq_len == 0:
                 sub_seq_start = sp_rank * sub_seq_length
@@ -252,12 +259,9 @@ class VitBackbone(MegatronModule):
                 seq_shard_list = [sub_seq_length+1] * self.remainder_seq_len + [sub_seq_length] * (sp-self.remainder_seq_len)
                 sub_seq_start = sum(seq_shard_list[:sp_rank])
                 sub_seq_end = sum(seq_shard_list[:sp_rank+1])
-            
+                print("likely will use uneven sequence parallelism")
             self.position_embeddings = pos_encoding[sub_seq_start:sub_seq_end, :] ## s, h ?
 
-            ## For pos_encoding, sub_seq_idx need to include clf_token
-            ## For the actual sequence, sub_seq_idx need to eclude clf_token 
-            ## Therefore, reduce the sub_sequence of first rank by 1 for clf token
             if self.ds_sequence_parallel:
                 if class_token:
                     self.sub_seq_start = sub_seq_start if sp_rank == 0 else sub_seq_start - 1
@@ -321,8 +325,10 @@ class VitBackbone(MegatronModule):
             seq_parallel_rank = mpu.get_sequence_parallel_rank()
             if self.ds_sequence_parallel:
                 rearranged_input = rearranged_input[:, self.sub_seq_start:self.sub_seq_end, :] ## b, s, h
+                # print(f"rearranged_input.shape: {rearranged_input.shape}") ## TODO: how did uneven sequence parallelism work beforehand? 
                 ## Q. Don't we need to use sequence_data_parallel instead of sequence_parallel_rank?
                 ## > No, sequence_data_parallel_rank is the rank of both sp + dp groups. 
+            # raise KeyboardInterrupt()
 
             assert rearranged_input.dtype == torch.half
             encoder_output = self.linear_encoder(rearranged_input)

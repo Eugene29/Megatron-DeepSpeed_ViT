@@ -358,11 +358,9 @@ class CoreAttention(MegatronModule):
         context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
 
         # [sq, b, np, hn] --> [sq, b, hp]
-        ## [s, b, hc, hs] --> [s, b, h]?
-        if not "NEWDS" in os.environ: ## New DS-Ulysses need separate head count and head size dimensions.
-            new_context_layer_shape = context_layer.size()[:-2] + \
-                (self.hidden_size_per_partition,)
-            context_layer = context_layer.view(*new_context_layer_shape)
+        new_context_layer_shape = context_layer.size()[:-2] + \
+            (self.hidden_size_per_partition,)
+        context_layer = context_layer.view(*new_context_layer_shape)
 
         return context_layer
 
@@ -917,10 +915,10 @@ class ParallelAttention(MegatronModule):
 
                     if not self.use_flash_attn_triton:
                         context_layer = rearrange(context_layer, 'b s h d -> s b (h d)').contiguous()
-            else:
-                ## Deepspeed Ulysses (CoreAttention)
-                # context_layer = self.dist_attn(query_layer, key_layer, value_layer, attention_mask=attention_mask)
-                context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx=batch_dim_idx, attention_mask=attention_mask)
+                else:
+                    ## Deepspeed Ulysses (CoreAttention)
+                    # context_layer = self.dist_attn(query_layer, key_layer, value_layer, attention_mask=attention_mask)
+                    context_layer = self.dist_attn(query_layer, key_layer, value_layer, batch_dim_idx=batch_dim_idx, attention_mask=attention_mask)
         else:
             if self.use_flash_attn:
                 if not self.use_flash_attn_triton:
@@ -949,8 +947,6 @@ class ParallelAttention(MegatronModule):
         
         if args.use_unifiedSP and self.enable_ds_sequence_parallel:
             context_layer = rearrange(context_layer, ("b s hc hd -> s b (hc hd)")).contiguous() ## TODO: unnecessary transpose of s b -> b s then b s -> s b.
-        elif not self.use_flash_attn and 'NEWDS' in os.environ: ## if DS-Ulysses w/ deepspeed>=14.5
-            context_layer = context_layer.flatten(start_dim=-2) ## [s, b, hc, hd] -> [s, b, h]
 
         output, bias = self.dense(context_layer)
 

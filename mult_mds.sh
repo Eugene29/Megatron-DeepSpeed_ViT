@@ -1,5 +1,3 @@
-# export NEWDS=1 ## TODO: parse Deepspeed version to deprecate this flag. 
-
 # SCRIPT_PTH=/eagle/datascience/eku/Megatron-DeepSpeed_ViT/mult_mds.sh ## Use this if submitting this script as qsub (also needed if using batch scripts?)
 SCRIPT_PTH=${BASH_SOURCE[0]}
 WORKING_DIR=$(dirname $SCRIPT_PTH | xargs realpath)
@@ -49,6 +47,7 @@ export PROFILE=1
 export FA=1
 
 ################################# EXAMPLE RUNS #################################
-export GBS=16; export DATA=TOY; export factor=64; export VIT="HUGE"; #export hpz=4
+export GBS=2; export DATA=TOY; export factor=64; export VIT="6B"; #export hpz=4
 
-SP=8 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_MBS${MBS}.log
+SP=8 ZERO=3 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_MBS${MBS}.log
+# SP=8 ZERO=3 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_MBS${MBS}.log

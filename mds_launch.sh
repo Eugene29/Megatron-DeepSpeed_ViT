@@ -3,25 +3,26 @@
 ## ENVIRONMENT
 echo "Launching Megatron Deepspeed VIT."
 TZ="America/Chicago" date ## Q. interesting bash command, the command is after the argument?
-. /home/eku/venv/stable_ds15.1/bin/activate ## USER: change env accordingly (env has sam's ezpz repo + deepspeed tag: v0.15.1)
+module load conda
+conda activate
+# . /eagle/projects/datascience/eku/venv/vit/bin/activate ## Virtual ENV 
 
-## If DATA_PATH_LOG is passed, will record input tensors consumed
+## (debug) If DATA_PATH_LOG is passed, will record input tensors consumed
 if [[ $DATA_PATH_LOG ]]; then
      > $DATA_PATH_LOG 
 fi
 
 ## PYTHONPATH 
-SCRIPT_DIR="/eagle/datascience/eku/Megatron-DeepSpeed_ViT/"
-cd $SCRIPT_DIR
-# PYTHONPATH=$og_PYTHONPATH
+SCRIPT_DIR="/eagle/datascience/eku/Megatron-DeepSpeed_ViT"
 YUNCHANG="$SCRIPT_DIR/long-context-attention" ## Custom yunchang (USP)
-# YUNCHANG=$SCRIPT_DIR/DeepSpeed ## Temporary DeepSpeed
-PYTHONPATH="$YUNCHANG:$PYTHONPATH"
+DEEPSPEED="$SCRIPT_DIR/DeepSpeed" ## Custom DeepSpeed
+PYTHONPATH="${DEEPSPEED:-}:$YUNCHANG:$PYTHONPATH"
 export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}" ## Add local megatron path
+cd $SCRIPT_DIR
 
 ## HOST NODE
-export MASTER_ADDR=localhost
-export MASTER_PORT=6000
+# export MASTER_ADDR=localhost
+# export MASTER_PORT=6000
 
 ## ARGUMENTS
 source "${SCRIPT_DIR}/mds_args.sh"
@@ -126,7 +127,7 @@ nsys=""
 #      ${DS_ARGS}"
 
 export RDZV_HOST=$(hostname)
-export RDZV_PORT=29403
+export RDZV_PORT=$RANDOM
 export WORLD_SIZE=${NGPUS}
 num_node=$(wc -l < $PBS_NODEFILE)
 num_gpus_pernode=4
@@ -134,16 +135,6 @@ num_gpus_pernode=4
 # if [[ $SAVE_LOG_TO ]]; then
 #      SAVE_LOG_TO="|& tee $SAVE_LOG_TO"
 # fi
-
-# echo num_node: $num_node
-# echo NGPUS: $NGPUS
-# echo RDZV_HOST: $RDZV_HOST
-# echo RDZV_PORT: $RDZV_PORT
-# echo num_gpus_pernode: $num_gpus_pernode
-# exit 1
-     # ${SCRIPT_DIR}/pretrain_gpt.py \
-
-# --nproc_per_node 4 --rdzv_id $RANDOM --rdzv_backend c10d --rdzv_endpoint $head_node_ip:29500
 
 # run_cmd="torchrun --nproc-per-node 4 --rdzv_backend c10d --rdzv_endpoint "$RDZV_HOST:$RDZV_PORT" \
 #      ${SCRIPT_DIR}/pretrain_vision_classify.py \

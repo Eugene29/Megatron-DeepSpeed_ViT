@@ -2,8 +2,6 @@
 
 ## ENVIRONMENT
 echo "Launching Megatron Deepspeed VIT."
-# TZ="America/Chicago" date ## Q. interesting bash command, the command is after the argument?
-# . /eagle/projects/datascience/eku/venv/vit/bin/activate ## Virtual ENV 
 
 get_machine() {
     machine=$(hostname)
@@ -25,15 +23,14 @@ get_machine() {
         echo "Unknown MACHINE. Setting MACHINE to $(hostname) and continuing..."
     fi
     export MACHINE="${machine}"
-    echo "Running on: $Machine"
+    echo "Running on: $machine"
 }
 get_machine
 
 if [[ $MACHINE == "aurora" ]]; then 
      ## {Aurora: frameworks-2024.2.1_u1, Polaris: 2024-08-08 base}
-     WORKING_DIR="/flare/Aurora_deployment/eku/Megatron-DeepSpeed_ViT/"
      WANDB_PROJECT_NAME="AuroraViT"
-     EKU_PATH="/lus/flare/projects/Aurora_deployment/eku/data"
+     DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
      FA_VERSION="--use-flash-attn-builder"
      NGPU_PER_HOST=12
      set_ccl_vars_on_aurora() {
@@ -70,10 +67,10 @@ if [[ $MACHINE == "aurora" ]]; then
 elif [[ $MACHINE == "polaris" ]]; then 
      module load conda
      conda activate
-     WORKING_DIR="/eagle/datascience/eku/Megatron-DeepSpeed_ViT"
      WANDB_PROJECT_NAME="PolarisViT"
-     EKU_PATH="/eagle/datascience/eku/data"
+     DATA_DIR="/eagle/datascience/eku/data"
      FA_VERSION="--use-flash-attn-v2"
+     # FA_VERSION="--use-flash-attn-builder" ## TODO: Change back to v2 - why not v3? 
      NGPU_PER_HOST=4
      ## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
      export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -85,7 +82,7 @@ else
 fi
 
 ## PYTHONPATH 
-# WORKING_DIR=$(dirname ${BASH_SOURCE[0]})
+WORKING_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
 cd $WORKING_DIR
 YUNCHANG="${WORKING_DIR}/long-context-attention" ## Custom yunchang (USP)
 DEEPSPEED="${WORKING_DIR}/DeepSpeed" ## Custom DeepSpeed
@@ -204,8 +201,6 @@ if [[ $MACHINE == "aurora" ]]; then
 elif [[ $MACHINE == "polaris" ]]; then
      export RDZV_HOST=$(hostname)
      export RDZV_PORT=$RANDOM
-     # export WORLD_SIZE=${NGPUS} ## Do we really need this? 
-     # num_node=$(wc -l < $PBS_NODEFILE)
      run_cmd="mpiexec --verbose --envall -n ${NHOSTS} -ppn 1 --cpu-bind depth -d ${NGPUS} \
           python3 -m torch.distributed.run --rdzv_backend=c10d --rdzv_endpoint="$RDZV_HOST:$RDZV_PORT" --nnodes=${NHOSTS} --nproc_per_node=${NGPU_PER_HOST} \
           ${WORKING_DIR}/pretrain_vision_classify.py \
@@ -218,7 +213,7 @@ else
      echo "machine keyerror"; exit 1
 fi
 
-## Vanilla torchrun. Doesn't work atm on polaris.
+## Vanilla torchrun. Doesn't work atm at least on polaris.
 # run_cmd="torchrun --nproc-per-node 4 --rdzv_backend c10d --rdzv_endpoint "$RDZV_HOST:$RDZV_PORT" \
 #      ${WORKING_DIR}/pretrain_vision_classify.py \
 #      ${CLASSIFIER_ARGS} \

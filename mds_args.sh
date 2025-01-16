@@ -1,7 +1,6 @@
 #!/bin/bash
 
 ## COMMUNICATION
-TSTAMP=$(date "+%Y-%m-%d-%H%M%S")
 NHOSTS=$(wc -l < "${PBS_NODEFILE}")
 
 ## LIMIT GPUs VISIBLE (FOR 1-NODE EXPERIMENTS)
@@ -17,7 +16,8 @@ elif [ ${SIZE:-"-1"} -eq 2 ]; then
     NGPUS=2
 fi
 
-## HELPFUL FOR DEBUGGING THROUGH PRINTING OUT GRADIENTS  
+## DEBUG VARIABLES
+# HELPFUL FOR DEBUGGING THROUGH PRINTING OUT GRADIENTS  
 if [ ${DEBUG:-""} == "SP" ]; then
     export SP=${SP:-4}
     export DEBUG_FNAME=debug/output_SP.txt
@@ -32,7 +32,7 @@ elif [ ${DEBUG:-""} == "DP" ]; then
     # export DEBUG_FNAME=None
     > $DEBUG_FNAME
 fi
-## (debug) If DATA_PATH_LOG is passed, will record input tensors consumed
+# If DATA_PATH_LOG is passed, will record input tensors consumed
 if [[ $DATA_PATH_LOG ]]; then
      > $DATA_PATH_LOG 
 fi
@@ -40,7 +40,6 @@ fi
 export SP=${SP:-1}
 export PP=${PP:-1}
 export TP=${TP:-1}
-export TSTAMP="${TSTAMP}"
 export NHOSTS="${NHOSTS}"
 export NGPU_PER_HOST="${NGPU_PER_HOST}"
 export PROJECT="datascience"
@@ -65,9 +64,10 @@ else
 fi
  
 if [[ $DATA == 'IMNET' ]]; then
-    echo "TRAINING ON IMNET: Probably broken"
+    echo "Not Implemented Error"
+    exit 1
     # DATA_PATH="~/aevard/datasets/imnet-20/train ~/aevard/datasets/imnet-20/valid"
-    DATA_PATH="$AEVARD_PATH/imnet-20/train $AEVARD_PATH/imnet-20/valid"
+    # DATA_PATH="$AEVARD_PATH/imnet-20/train $AEVARD_PATH/imnet-20/valid"
     NUM_CLASSES=20
     LR=1e-4
     WEIGHT_DECAY=0
@@ -83,7 +83,7 @@ if [[ $DATA == 'IMNET' ]]; then
     DS_CONFIG_FNAME="IMNET.json"
 elif [[ $DATA == 'CIFAR' ]]; then
     echo "TRAINING ON CIFAR"
-    DATA_PATH="$EKU_PATH/CIFAR10/train $EKU_PATH/CIFAR10/valid"
+    DATA_PATH="$DATA_DIR/CIFAR10/train $DATA_DIR/CIFAR10/valid"
     NUM_CLASSES=10
     LR=1e-4
     WEIGHT_DECAY=0
@@ -103,7 +103,7 @@ elif [[ $DATA == 'CIFAR' ]]; then
 elif [[ $DATA == 'TOY' ]]; then
     echo "TRAINING ON TOY DATASET"
     ##Toy Dataset
-    DATA_PATH="$EKU_PATH/CIFAR10/train $EKU_PATH/CIFAR10/valid"
+    DATA_PATH="$DATA_DIR/CIFAR10/train $DATA_DIR/CIFAR10/valid" ## Dummy data path
     NUM_CLASSES=20
     PATCH_DIM=16
     factor=${factor:-54}
@@ -133,16 +133,19 @@ if [[ $NUM_ITERS ]]; then
     TRAIN_SAMPLES=$(($NUM_ITERS * $GBS))
 fi
 
-cat <<EOF > "$DS_CONFIG_FNAME"
+ZERO=${ZERO:-0}
+hpz=${hpz:-1}
+
+cat <<EOF > "$WORKING_DIR/$DS_CONFIG_FNAME"
 {
   "train_batch_size": $GBS,
   "train_micro_batch_size_per_gpu": $MBS,
   "steps_per_print": 10,
 
   "zero_optimization": {
-    "stage": ${ZERO:-0},
+    "stage": $ZERO,
     "overlap_comm": true,
-    "zero_hpz_partition_size": ${hpz:-1},
+    "zero_hpz_partition_size": $hpz,
     "contiguous_gradients": true
   },
 

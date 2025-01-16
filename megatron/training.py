@@ -60,7 +60,7 @@ from deepspeed.runtime.data_pipeline.data_routing.helper import convert_to_rando
 from megatron.model.transformer import ParallelTransformerLayer
 
 from deepspeed import comm as dist
-from megatron.vit_utils import get_gpu_memory
+from megatron.vit_utils import get_gpu_memory, get_xpu_memory
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
@@ -1365,7 +1365,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             ProfilerActivityGPU = getattr(ProfilerActivity, "XPU")
             
         p = torch.profiler.profile(
-            schedule=torch.profiler.schedule(wait=36, warmup=2, active=2),
+            schedule=torch.profiler.schedule(wait=6, warmup=2, active=2),
             activities=[ProfilerActivity.CPU, ProfilerActivityGPU],
             # on_trace_ready=torch.profiler.tensorboard_trace_handler("/home/eku/aevard/polaris-trial/jobscripts/log/"),
             record_shapes=True,
@@ -1373,7 +1373,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             on_trace_ready=trace_handler,
         )
         p.start()
-        args.train_iters = 40
+        args.train_iters = 10
 
     def llm_num_floating_point_operations(args, batch_size):
         # Group Query Attention.
@@ -1597,7 +1597,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             rank0_mem_fpt = int(get_gpu_memory()[0]) / 1000
         elif torch.xpu.is_available():
             rank0_mem_fpt = torch.xpu.max_memory_reserved(0) / 1024**3
-            print_rank_0("WARNING: memory footprint is torch only, not system level (TODO: use xpu-smi?)")
+            # rank0_mem_fpt = get_xpu_memory() ## in GiB
+            # print_rank_0("WARNING: memory footprint is torch only, not system level (TODO: use xpu-smi?)")
         else:
             raise KeyError()
         log_dict = {

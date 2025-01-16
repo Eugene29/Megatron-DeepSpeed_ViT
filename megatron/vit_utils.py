@@ -2,6 +2,7 @@
 # import numpy as np
 # import pytz
 import subprocess as sp
+import re
 # from threading import Thread , Timer
 # import sched, time
 # import torch
@@ -29,6 +30,18 @@ def get_gpu_memory():
     memory_use_values = [int(x.split()[0]) for i, x in enumerate(memory_use_info)]
     # print(memory_use_values)
     return (memory_use_values)
+
+def get_xpu_memory():
+    result = sp.run(["xpu-smi", "stats", "-d", "0"], stdout=sp.PIPE, text=True)
+    output = result.stdout
+
+    # Regular expressions to match GPU memory fields
+    used_memory_pattern = r"GPU Memory Used \(MiB\).*Tile 0:\s*(\d+)"
+    # Search for the used memory for Tile 0
+    used_memory = re.search(used_memory_pattern, output)
+    used_memory_GiB = int(used_memory.group(1)) / 1024
+    # print(f"used_memory_int: {used_memory_GiB}", flush=True)
+    return used_memory_GiB
 
 if __name__ == "__main__":
     # from mpi4py import MPI

@@ -133,8 +133,8 @@ if [[ $NUM_ITERS ]]; then
     TRAIN_SAMPLES=$(($NUM_ITERS * $GBS))
 fi
 
-ZERO=${ZERO:-0}
-hpz=${hpz:-1}
+export ZERO=${ZERO:-0}
+export hpz=${hpz:-1}
 
 cat <<EOF > "$WORKING_DIR/$DS_CONFIG_FNAME"
 {
@@ -253,6 +253,12 @@ elif [[ $VIT == "LARGE" ]]; then
     HSIZE=1024
     FFN_HSIZE=4096
     NUM_HEADS=16
+elif [[ $VIT == "LARGE+" ]]; then
+    ## VIT-LARGE (307M)
+    NLAYERS=24
+    HSIZE=1032
+    FFN_HSIZE=4096
+    NUM_HEADS=12
 elif [[ $VIT == "HUGE" ]]; then
     ## VIT-HUGE (632M)
     NLAYERS=32

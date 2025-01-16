@@ -68,6 +68,29 @@ if [[ $MACHINE == "aurora" ]]; then
 elif [[ $MACHINE == "polaris" ]]; then 
      module load conda
      conda activate
+     # . /lus/eagle/projects/datascience/eku/venv/vit/bin/activate # if you want sam's ezpz
+     ## Huihuo's config
+     export AWS_DIR=/soft/libraries/aws-ofi-nccl/v1.6.0/
+     export NCCL_NET_GDR_LEVEL=PHB
+     export NCCL_CROSS_NIC=1
+     export NCCL_COLLNET_ENABLE=1
+     export NCCL_SOCKET_IFNAME=hsn
+     export NCCL_NET="AWS Libfabric"
+     export LD_LIBRARY_PATH=$AWS_DIR/lib:$LD_LIBRARY_PATH
+     export LD_LIBRARY_PATH=/soft/libraries/hwloc/lib/:$LD_LIBRARY_PATH
+
+     export FI_CXI_DISABLE_HOST_REGISTER=1
+     export FI_MR_CACHE_MONITOR=userfaultfd
+     export FI_CXI_DEFAULT_CQ_SIZE=131072
+     export FI_CXI_DEFAULT_TX_SIZE=131072
+     export FI_CXI_RDZV_PROTO=alt_read
+     export FI_CXI_RX_MATCH_MODE=software
+     export FI_CXI_REQ_BUF_SIZE=16MB
+
+     export FI_CXI_RDZV_GET_MIN=0
+     export FI_CXI_SAFE_DEVMEM_COPY_THRESHOLD=16000
+     export FI_CXI_RDZV_THRESHOLD=2000
+
      WANDB_PROJECT_NAME="PolarisViT"
      DATA_DIR="/eagle/datascience/eku/data"
      FA_VERSION="--use-flash-attn-v2"
@@ -202,6 +225,7 @@ if [[ $MACHINE == "aurora" ]]; then
 elif [[ $MACHINE == "polaris" ]]; then
      export RDZV_HOST=$(hostname)
      export RDZV_PORT=$RANDOM
+          # --hostfile ${PBS_NODEFILE} \
      run_cmd="mpiexec --verbose --envall -n ${NHOSTS} -ppn 1 --cpu-bind depth -d ${NGPUS} \
           python3 -m torch.distributed.run --rdzv_backend=c10d --rdzv_endpoint="$RDZV_HOST:$RDZV_PORT" --nnodes=${NHOSTS} --nproc_per_node=${NGPU_PER_HOST} \
           ${WORKING_DIR}/pretrain_vision_classify.py \
@@ -210,8 +234,18 @@ elif [[ $MACHINE == "polaris" ]]; then
           ${OUTPUT_ARGS} \
           ${MEG_ARGS} \
           ${DS_ARGS}"
+
+     # run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
+     #      --cpu-bind depth -d ${NGPUS} \
+     #      $nsys python \
+     #      ${WORKING_DIR}/pretrain_vision_classify_ezpz.py \
+     #      ${CLASSIFIER_ARGS} \
+     #      ${DATA_ARGS} \
+     #      ${OUTPUT_ARGS} \
+     #      ${MEG_ARGS} \
+     #      ${DS_ARGS}"
 else
-     echo "machine keyerror"; exit 1
+     echo "unknown machine keyerror"; exit 1
 fi
 
 ## Vanilla torchrun. Doesn't work atm at least on polaris.

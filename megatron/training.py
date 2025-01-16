@@ -1597,8 +1597,8 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             rank0_mem_fpt = int(get_gpu_memory()[0]) / 1000
         elif torch.xpu.is_available():
             rank0_mem_fpt = torch.xpu.max_memory_reserved(0) / 1024**3
+            print_rank_0("WARNING: memory footprint is torch only, not system level (TODO: use xpu-smi?)")
             # rank0_mem_fpt = get_xpu_memory() ## in GiB
-            # print_rank_0("WARNING: memory footprint is torch only, not system level (TODO: use xpu-smi?)")
         else:
             raise KeyError()
         log_dict = {

@@ -31,6 +31,7 @@ if [[ $MACHINE == "aurora" ]]; then
      ## {Aurora: frameworks-2024.2.1_u1, Polaris: 2024-08-08 base}
      WANDB_PROJECT_NAME="AuroraViT"
      DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
+     . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate ## env with ezpz, etc.
      FA_VERSION="--use-flash-attn-builder"
      NGPU_PER_HOST=12
      set_ccl_vars_on_aurora() {

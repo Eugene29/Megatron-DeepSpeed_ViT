@@ -266,25 +266,33 @@ elif [[ $VIT == "HUGE" ]]; then
     FFN_HSIZE=5120
     NUM_HEADS=16
 elif [[ $VIT == "GIANT" ]]; then
+    ## ?B
     NLAYERS=48
     HSIZE=1664
     FFN_HSIZE=8192
     NUM_HEADS=16
 elif [[ $VIT == "ENORMOUS" ]]; then
+    ## ?B
     NLAYERS=56
     HSIZE=1792
     FFN_HSIZE=15360
     NUM_HEADS=16
+elif [[ $VIT == "2B" ]]; then
+    ## 1.6B
+    NLAYERS=10
+    HSIZE=4096
+    NUM_HEADS=32
+    FFN_HSIZE=11008
+elif [[ $VIT == "3B" ]]; then
+    ## 2.7B
+    NLAYERS=24
+    HSIZE=3072
+    FFN_HSIZE=$((4 * HSIZE))
+    NUM_HEADS=32
 elif [[ $VIT == "4B" ]]; then
     ## 3.8B
     NLAYERS=48
     HSIZE=2560
-    FFN_HSIZE=$((4 * HSIZE))
-    NUM_HEADS=32
-elif [[ $VIT == "3B" ]]; then
-    ## 3.8B
-    NLAYERS=24
-    HSIZE=3072
     FFN_HSIZE=$((4 * HSIZE))
     NUM_HEADS=32
 elif [[ $VIT == "5B" ]]; then
@@ -407,8 +415,8 @@ elif [[ $VIT == "46+B" ]]; then
     HSIZE=$((64 * 144))
     FFN_HSIZE=$((4 * HSIZE))
     NUM_HEADS=64
-elif [[ $VIT == "70B" ]]; then
-    ## 70B in GPT; in VIT?
+elif [[ $VIT == "59B" ]]; then
+    ## 70B in GPT; 59B in VIT?
     NLAYERS=80
     HSIZE=8192
     FFN_HSIZE=28672

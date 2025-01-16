@@ -11,6 +11,6 @@
 Only base environment is needed for polaris cluster and for aurora, we use sam's ezpz repo. A suitable virtual environment is activated by default on aurora. 
 
 ## Notes:
-Main script for entry is mult_mds.sh. In here, you'll need to modify WORKING_DIR. There is also argument descriptions provided. 
+Main script for entry is mult_mds.sh. In here, you'll need to modify SCRIPT_DIR. There is also argument descriptions provided. 
 
 Two set-up scripts are mds_args.sh and mds_launch.sh. Let me know if you think they will be better off merged. 

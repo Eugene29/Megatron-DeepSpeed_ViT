@@ -154,7 +154,7 @@ CLASSIFIER_ARGS="
      --attention-dropout ${ATT_DROPOUT:-0} \
      --hidden-dropout ${H_DROPOUT:-0} \
      --ffn-hidden-size ${FFN_HSIZE:-HSIZE} \
-     --save /home/eku/polaris/save \
+     --save ${WORKING_DIR}/save \
      --train-samples ${TRAIN_SAMPLES} \
      --retro-encoder-attention-dropout 0.0 \
      --retro-encoder-hidden-dropout 0.0 \

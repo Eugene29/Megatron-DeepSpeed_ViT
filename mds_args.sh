@@ -151,27 +151,33 @@ cat <<EOF > "$WORKING_DIR/$DS_CONFIG_FNAME"
 
   "gradient_clipping": 1.0,
   "prescale_gradients": false,
-  "communication_data_type": "fp16",
 
-  "fp16": {
-    "enabled": true,
-    "loss_scale": 0,
-    "loss_scale_window": 500,
-    "hysteresis": 2,
-    "min_loss_scale": 1,
-    "initial_scale_power": 11
+  "communication_data_type": "bf16",
+  "bf16": {
+    "enabled": true
   },
+
   "wall_clock_breakdown" : false
 }
 EOF
+
+## fp16
+#   "communication_data_type": "fp16",
+#   "fp16": {
+#     "enabled": true,
+#     "loss_scale": 0,
+#     "loss_scale_window": 500,
+#     "hysteresis": 2,
+#     "min_loss_scale": 1,
+#     "initial_scale_power": 11
+#   },
+
+## broken
 #   "data_types": {
 #     "grad_accum_dtype": "fp32" 
 #   },
 
-#   "bfloat16": {
-#     "enabled": true,
-#     "loss_scale": 1.0
-#   },
+## prevents comm overlap
 # ,
 #   "comms_logger": {
 #     "enabled": true,
@@ -180,7 +186,7 @@ EOF
 #     "debug": false
 #   }
 
-## Below configs seems to not work.
+## Below configs seems to not do anything
 #  "activation_checkpointing": {
 #     "partition_activations": false,
 #     "cpu_checkpointing": false,

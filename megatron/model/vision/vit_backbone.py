@@ -330,7 +330,7 @@ class VitBackbone(MegatronModule):
                 ## > No, sequence_data_parallel_rank is the rank of both sp + dp groups. 
             # raise KeyboardInterrupt()
 
-            assert rearranged_input.dtype == torch.half
+            # assert rearranged_input.dtype == torch.half ## Q. We should be able to use bf16 if we want? 
             encoder_output = self.linear_encoder(rearranged_input)
 
             ## TODO: think of a way to reduce the number of bools

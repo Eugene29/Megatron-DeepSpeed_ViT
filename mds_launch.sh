@@ -140,7 +140,7 @@ CLASSIFIER_ARGS="
      --img-h ${IMG_H} \
      --img-w ${IMG_W} \
      --num-classes ${NUM_CLASSES} \
-     --fp16 \
+     --bf16 \
      --mask-factor 1.0 \
      --lr-decay-style cosine \
      --lr ${LR} \
@@ -162,6 +162,7 @@ CLASSIFIER_ARGS="
      --no-bias-dropout-fusion \
      --accumulate-allreduce-grads-in-fp32 \
 "
+     # --fp16 \
 ## TODO: does --no-async-tensor-model-parallel-allreduce \ make things faster? 
 
 if [[ $FA -eq 1 ]]; then

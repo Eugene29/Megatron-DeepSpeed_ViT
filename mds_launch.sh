@@ -2,6 +2,7 @@
 
 ## ENVIRONMENT
 echo "Launching Megatron Deepspeed VIT."
+TZ="America/Chicago" date ## Q. How does this command print something?
 
 get_machine() {
     machine=$(hostname)
@@ -160,8 +161,8 @@ CLASSIFIER_ARGS="
      --retro-encoder-hidden-dropout 0.0 \
      --no-masked-softmax-fusion \
      --no-bias-dropout-fusion \
-     --accumulate-allreduce-grads-in-fp32 \
 "
+     # --accumulate-allreduce-grads-in-fp32 \
      # --fp16 \
 ## TODO: does --no-async-tensor-model-parallel-allreduce \ make things faster? 
 
@@ -191,6 +192,7 @@ OUTPUT_ARGS="
      --wandb-project $WANDB_PROJECT_NAME \
      --save-interval 2500 \
 "
+     # --save-interval 5 \ ## checkpointing (TBD - postponed)
 DS_ARGS="
      --deepspeed \
      --deepspeed_config=$ds_json
@@ -236,6 +238,7 @@ elif [[ $MACHINE == "polaris" ]]; then
           ${MEG_ARGS} \
           ${DS_ARGS}"
 
+     ## mpiexec with ezpz
      # run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
      #      --cpu-bind depth -d ${NGPUS} \
      #      $nsys python \

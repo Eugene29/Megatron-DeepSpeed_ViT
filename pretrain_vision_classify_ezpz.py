@@ -77,6 +77,9 @@ def get_batch(data_iterator):
     dp_rank = mpu.get_data_parallel_rank()
     dp_src_rank = mpu.get_data_parallel_src_rank()
 
+    assert args.fp16 or args.bf16
+    img_dtype = torch.float16 if args.fp16 else torch.bfloat16
+
     ## Generate Random TOY dataset
     if os.environ["DATA"] == "TOY":
         ## 1. First, only rank0 generates the data
@@ -94,7 +97,7 @@ def get_batch(data_iterator):
         assert MBS == b / dp, f"Environment Var MBS (GBS ({b})/ DP ({dp}))is not local MBS: ({MBS})"
         assert b % dp == 0, "global batch size is not divisible by dp degree"
 
-        img_dtype = torch.float16
+        # img_dtype = torch.float16
         label_dtype = torch.int64
 
         if dp_src_rank == 0: ## only need data in first dp group as it will get broadcasted to other dp group. 
@@ -137,7 +140,7 @@ def get_batch(data_iterator):
             #     dist.barrier(group=dp_group) ## communicate only within the first group.
 
     data_i = tensor_parallel.broadcast_data(["label"], data_dict, torch.int64) ##TODO: lower precision, will it get angry at me if I set it to 16 or 32? 
-    data_f = tensor_parallel.broadcast_data(["image"], data_dict, torch.float16) ## images are in int8 -> fp16
+    data_f = tensor_parallel.broadcast_data(["image"], data_dict, img_dtype)
 
     labels = data_i["label"].long().contiguous()
     images = data_f["image"].contiguous()

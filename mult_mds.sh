@@ -43,13 +43,26 @@ export drop_last_batch_with_GBS=1
 # export GLOBAL_MEAN_POOLING=1
 export WANDB_MODE=disabled
 export POS_ENCODING=1
-export PROFILE=1
+# export PROFILE=1 ## Profiling gets hung on Aurora
 export FA=1
 
 ################################# EXAMPLE RUNS #################################
-# export MBS=2; export DATA=TOY; export factor=64; export VIT="13B"; #export hpz=4
-export MBS=1; export DATA=TOY; export factor=64; export VIT="22B"; #export hpz=4
+# export MBS=1; export DATA=TOY; export factor=64; export VIT="22B"; #export hpz=4
+export MBS=48; export DATA=CIFAR; export factor=64; export VIT="LARGE+"; #export hpz=4
+SP=24 ZERO=3 NUM_ITERS=200 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# SP=1 ZERO=3 NUM_ITERS=200 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
 
-SP=1 ZERO=3 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_MBS${MBS}.log
-# SP=8 ZERO=3 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_MBS${MBS}.log
-# SP=8 ZERO=3 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_MBS${MBS}.log
+# export MBS=1; export DATA=TOY; export factor=32; export VIT="LARGE+"; export ZERO=3 #export hpz=4
+# SP=12 NUM_ITERS=6 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# export factor=64;
+# SP=12 NUM_ITERS=6 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# export factor=128;
+# SP=12 NUM_ITERS=6 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# export factor=256;
+# SP=1 NUM_ITERS=6 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# export factor=512;
+# SP=12 NUM_ITERS=6 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# export factor=1024;
+# SP=12 NUM_ITERS=6 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# export factor=2048;
+# SP=12 NUM_ITERS=6 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log

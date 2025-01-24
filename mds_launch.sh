@@ -34,6 +34,7 @@ if [[ $MACHINE == "aurora" ]]; then
      DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
      . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate ## env with ezpz, etc.
      FA_VERSION="--use-flash-attn-builder"
+     # FA_VERSION="--use-flash-attn-triton"
      NGPU_PER_HOST=12
      set_ccl_vars_on_aurora() {
           export CCL_KVS_MODE=mpi
@@ -162,7 +163,7 @@ CLASSIFIER_ARGS="
      --no-masked-softmax-fusion \
      --no-bias-dropout-fusion \
 "
-     # --accumulate-allreduce-grads-in-fp32 \
+     # --accumulate-allreduce-grads-in-fp32 \ ## To keep or not to keep? 
      # --fp16 \
 ## TODO: does --no-async-tensor-model-parallel-allreduce \ make things faster? 
 
@@ -228,7 +229,6 @@ if [[ $MACHINE == "aurora" ]]; then
 elif [[ $MACHINE == "polaris" ]]; then
      export RDZV_HOST=$(hostname)
      export RDZV_PORT=$RANDOM
-          # --hostfile ${PBS_NODEFILE} \
      run_cmd="mpiexec --verbose --envall -n ${NHOSTS} -ppn 1 --cpu-bind depth -d ${NGPUS} \
           python3 -m torch.distributed.run --rdzv_backend=c10d --rdzv_endpoint="$RDZV_HOST:$RDZV_PORT" --nnodes=${NHOSTS} --nproc_per_node=${NGPU_PER_HOST} \
           ${WORKING_DIR}/pretrain_vision_classify.py \
@@ -237,7 +237,6 @@ elif [[ $MACHINE == "polaris" ]]; then
           ${OUTPUT_ARGS} \
           ${MEG_ARGS} \
           ${DS_ARGS}"
-
      ## mpiexec with ezpz
      # run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
      #      --cpu-bind depth -d ${NGPUS} \

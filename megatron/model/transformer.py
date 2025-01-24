@@ -1359,7 +1359,9 @@ class ParallelTransformerLayer(MegatronModule):
                 attention_mask,
                 inference_params=inference_params,
                 rotary_pos_emb=rotary_pos_emb)
-        
+        # import time
+        # torch.xpu.synchronize()
+        # strt = time.time()
         if debug_mode:
             debug_fname = os.environ['DEBUG_FNAME']
             with open(debug_fname, "a") as f:
@@ -1494,6 +1496,9 @@ class ParallelTransformerLayer(MegatronModule):
                 f.write(f"[{seq_rank}] mlp_output: {mlp_output}")
                 f.write(f"[{seq_rank}] output: {output}")
 
+        # torch.xpu.synchronize()
+        # end = time.time()
+        # print(f"end - strt: {end - strt}", flush=True)
         if self.layer_type == LayerType.retro_decoder_with_retriever:
             return output, retriever_output, moe_loss
         else:

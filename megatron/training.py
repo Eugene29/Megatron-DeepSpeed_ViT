@@ -1356,9 +1356,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 packed = ""
 
             if rank == 0:
-                # p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
-                p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{VIT3D}{VIT}{IMG}{FA}{SP}{TP}{ZERO}{ACT}.json")
-                # p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{VIT3D}{VIT}{IMG}{FA}{SP}{TP}{ZERO}{ACT}rank{rank}.json")
+                p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
 
         print_rank_0(f"PROFILING...")
         if torch.cuda.is_available():

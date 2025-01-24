@@ -243,21 +243,21 @@ if __name__ == "__main__":
     import time
     from megatron import get_wandb_writer
     train_strt = time.time()
-    try:
-        pretrain(
-            train_valid_test_datasets_provider,
-            model_provider,
-            ModelType.encoder_or_decoder,
-            forward_step,
-            args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
-        )
-    except RuntimeError as e:
-        if "CUDA out of memory" in str(e) or "out of memory" in str(e):
-        # if "CUDA out of memory" in str(e):
-            print_rank_0("\nCUDA OUT OF MEMORY. Forcefully terminating...\n")
-            os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
-        else:
-            raise
+    pretrain(
+        train_valid_test_datasets_provider,
+        model_provider,
+        ModelType.encoder_or_decoder,
+        forward_step,
+        args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
+    )
+    # try:
+    # except RuntimeError as e:
+    #     if "CUDA out of memory" in str(e) or "out of memory" in str(e):
+    #     # if "CUDA out of memory" in str(e):
+    #         print_rank_0("\nCUDA OUT OF MEMORY. Forcefully terminating...\n")
+    #         os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
+    #     else:
+    #         raise
     # except Exception as e:
     #     print_rank_0("\nForcefully terminating...\n")
     #     print(f"\nERROR MESSAGE: {str(e)}\n")

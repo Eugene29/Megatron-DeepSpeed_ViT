@@ -40,6 +40,7 @@ fi
 export SP=${SP:-1}
 export PP=${PP:-1}
 export TP=${TP:-1}
+export GAS=${GAS:-1}
 export NHOSTS="${NHOSTS}"
 export NGPU_PER_HOST="${NGPU_PER_HOST}"
 export PROJECT="datascience"
@@ -55,10 +56,10 @@ export DATA=${DATA:-'CIFAR'}
 MP=$(($SP * $TP * $PP))
 DP=$(($NGPUS / $MP))
 if [[ $GBS ]]; then
-    MBS=$(($GBS / $DP))
+    MBS=$(($GBS / $DP)) ## MBS is $GAS * $MBS? 
 elif [[ $MBS ]]; then
     # MBS=$(($MBS * $MP)) ## Maintain GBS across DP and MP
-    GBS=$(($MBS * $DP)) 
+    GBS=$(($MBS * $DP * $GAS)) 
 else
     printf "\nERROR: you need to pass in either MBS or GBS\n"; exit 1
 fi
@@ -157,9 +158,18 @@ cat <<EOF > "$WORKING_DIR/$DS_CONFIG_FNAME"
     "enabled": true
   },
 
+  "gradient_accumulation_steps": $GAS, 
+
   "wall_clock_breakdown" : false
 }
 EOF
+
+#   "comms_logger": {
+#     "enabled": true,
+#     "verbose": false,
+#     "prof_all": true,
+#     "debug": false
+#   }
 
 ## fp16
 #   "communication_data_type": "fp16",
@@ -178,13 +188,6 @@ EOF
 #   },
 
 ## prevents comm overlap
-# ,
-#   "comms_logger": {
-#     "enabled": true,
-#     "verbose": false,
-#     "prof_all": true,
-#     "debug": false
-#   }
 
 ## Below configs seems to not do anything
 #  "activation_checkpointing": {
@@ -264,7 +267,7 @@ elif [[ $VIT == "LARGE+" ]]; then
     NLAYERS=24
     HSIZE=1032
     FFN_HSIZE=4096
-    NUM_HEADS=12
+    NUM_HEADS=24
 elif [[ $VIT == "HUGE" ]]; then
     ## VIT-HUGE (632M)
     NLAYERS=32

@@ -15,13 +15,16 @@
 # FA=1 POS_ENCODING=1 bash $MAIN_SCRIPT |& tee $LOGDIR/$LOGFNAME ## TODO: get rid of nested qsub? 
 
 PROJ="Aurora_deployment"
+# QUEUE="debug"
 QUEUE="lustre_scaling"
 hrs=1
 BASH_SCRIPT="/lus/flare/projects/Aurora_deployment/eku/Megatron-DeepSpeed_ViT/mult_mds.sh"
 
-num_nodes=128
+num_nodes=64
 qsub -V -A $PROJ -q $QUEUE -l select=$num_nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT
-num_nodes=256
-qsub -V -A $PROJ -q $QUEUE -l select=$num_nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT
+# num_nodes=128
+# qsub -V -A $PROJ -q $QUEUE -l select=$num_nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT
+# num_nodes=256
+# qsub -V -A $PROJ -q $QUEUE -l select=$num_nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT
 # num_nodes=512
 # qsub -V -A $PROJ -q $QUEUE -l select=$num_nodes -l walltime=$hrs:00:00,filesystems=eagle:home $BASH_SCRIPT

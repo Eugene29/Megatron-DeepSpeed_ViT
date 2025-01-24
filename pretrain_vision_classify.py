@@ -255,12 +255,12 @@ if __name__ == "__main__":
         )
     except RuntimeError as e:
         ## Forcefully kill processes. Helps quickly end runs, at least on polaris
-        if "CUDA out of memory" in str(e) or "out of memory" in str(e):
+        if "longjmp causes uninitialized stack frame" in str(e):
+            print_rank_0("\longjmp(?) error. Forcefully terminating...\n")
+            print_rank_0(f"Original error message was: {str(e)}")
+        elif "CUDA out of memory" in str(e) or "out of memory" in str(e):
         # if "CUDA out of memory" in str(e):
             print_rank_0("\nCUDA OUT OF MEMORY. Forcefully terminating...\n")
-            print_rank_0(f"Original error message was: {str(e)}")
-        elif "longjmp causes uninitialized stack frame" in str(e):
-            print_rank_0("\longjmp(?) error. Forcefully terminating...\n")
             print_rank_0(f"Original error message was: {str(e)}")
         else:
             raise

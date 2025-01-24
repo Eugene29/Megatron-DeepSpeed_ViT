@@ -11,7 +11,6 @@ import torch
 
 from megatron import update_num_microbatches, get_tokenizer
 from megatron.core import mpu, tensor_parallel
-import torch.distributed
 from .global_vars import get_args
 from .utils import (unwrap_model,
                     print_rank_0,

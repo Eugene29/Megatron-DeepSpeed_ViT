@@ -52,14 +52,13 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
         parser = extra_args_provider(parser)
 
     parser = deepspeed.add_config_arguments(parser)
+    parser.add_argument('--use-MICS', action='store_true', help='enable MICS')
 
     # Parse.
     if ignore_unknown_args:
         args, _ = parser.parse_known_args()
     else:
         args = parser.parse_args()
-
-    ## Custom arguments 2.
 
     # helper argument to set deepspeed pipeline parallel or not
     args.ds_pipeline_enabled = not args.no_pipeline_parallel

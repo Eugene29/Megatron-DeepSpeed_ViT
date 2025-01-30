@@ -111,7 +111,8 @@ fi
 WORKING_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
 cd $WORKING_DIR
 YUNCHANG="${WORKING_DIR}/long-context-attention" ## Custom yunchang (USP)
-DEEPSPEED="${WORKING_DIR}/DeepSpeed" ## Custom DeepSpeed
+# DEEPSPEED="${WORKING_DIR}/DeepSpeed" ## Custom DeepSpeed
+DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps" ## Test DeepSpeed 16.3? 
 PYTHONPATH="${DEEPSPEED}:${YUNCHANG}:${PYTHONPATH}"
 export PYTHONPATH="${WORKING_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## HOST NODE
@@ -237,7 +238,7 @@ elif [[ $DATA == 'TOY' ]]; then
     LR_WARMUP_SAMPLES=0
 
     ## DATA
-    DS_CONFIG_FNAME="TOY.json"
+    DS_CONFIG_FNAME="TOY_N$NHOSTS.json"
 else
     echo "Dataset not implemented"
     exit 1
@@ -254,31 +255,67 @@ fi
 
 export ZERO=${ZERO:-0}
 export hpz=${hpz:-1}
+ds_config_MICS=""
+if [[ $MICS_SHARD_SIZE ]]; then
+     ds_config_MICS="\"mics_hierarchical_params_gather\": true,
+                     \"mics_shard_size\": $MICS_SHARD_SIZE,"
+fi
 
+## DATA TYPE
+ds_config_data_type=""
+if [[ $fp16 == 1 && $bf16 == 16 ]]; then
+    echo "you cannot choose both fp16 and bf16"
+    exit 1
+elif [[ $fp16 == 1 ]]; then
+    ds_config_data_type='
+    "communication_data_type": "fp16",
+    "fp16": {
+        "enabled": true,
+        "loss_scale": 0,
+        "loss_scale_window": 500,
+        "hysteresis": 2,
+        "min_loss_scale": 1,
+        "initial_scale_power": 11
+    },'
+elif [[ $bf16 == 1 ]]; then
+    ds_config_data_type='
+    "communication_data_type": "bf16",
+        "bf16": {
+        "enabled": true
+    },'
+else
+    echo "pick either fp16 or bf16"
+    exit 1
+fi
+if [[ $fp16 == 1 ]]; then
+    data_type='fp16'
+elif [[ $bf16 == 1 ]]; then
+    data_type='bf16'
+fi
+
+## DS CONFIG
 cat <<EOF > "$WORKING_DIR/$DS_CONFIG_FNAME"
 {
-  "train_batch_size": $GBS,
-  "train_micro_batch_size_per_gpu": $MBS,
-  "steps_per_print": 10,
+    "train_batch_size": $GBS,
+    "train_micro_batch_size_per_gpu": $MBS,
+    "steps_per_print": 10,
 
-  "zero_optimization": {
-    "stage": $ZERO,
-    "overlap_comm": true,
-    "zero_hpz_partition_size": $hpz,
-    "contiguous_gradients": true
-  },
+    "zero_optimization": {
+        "stage": $ZERO,
+        "overlap_comm": true,
+        "zero_hpz_partition_size": $hpz,
+        $ds_config_MICS
+        "contiguous_gradients": true
+    },
 
-  "gradient_clipping": 1.0,
-  "prescale_gradients": false,
+    "gradient_clipping": 1.0,
+    "prescale_gradients": false,
 
-  "communication_data_type": "bf16",
-  "bf16": {
-    "enabled": true
-  },
+    $ds_config_data_type
 
-  "gradient_accumulation_steps": $GAS, 
+    "gradient_accumulation_steps": $GAS, 
 
-  "wall_clock_breakdown" : false
+    "wall_clock_breakdown" : false
 }
 EOF
 
@@ -290,15 +327,6 @@ EOF
 #   }
 
 ## fp16
-#   "communication_data_type": "fp16",
-#   "fp16": {
-#     "enabled": true,
-#     "loss_scale": 0,
-#     "loss_scale_window": 500,
-#     "hysteresis": 2,
-#     "min_loss_scale": 1,
-#     "initial_scale_power": 11
-#   },
 
 ## broken
 #   "data_types": {
@@ -524,8 +552,8 @@ elif [[ $VIT == "42B" ]]; then
     HSIZE=$((64 * 130))
     FFN_HSIZE=$((4 * HSIZE))
     NUM_HEADS=64
-elif [[ $VIT == "42+B" ]]; then
-    ## 42.4B
+elif [[ $VIT == "43B" ]]; then
+    ## 42.6B
     NLAYERS=51
     HSIZE=8340
     FFN_HSIZE=$((4 * HSIZE))
@@ -548,6 +576,12 @@ elif [[ $VIT == "59B" ]]; then
     HSIZE=8192
     FFN_HSIZE=28672
     NUM_HEADS=64
+elif [[ $VIT == "61B" ]]; then
+    ## 70B in GPT; 59B in VIT?
+    NLAYERS=80
+    HSIZE=8400
+    FFN_HSIZE=28672
+    NUM_HEADS=60
 elif [[ $VIT == "112B" ]]; then
     ## 112
     NLAYERS=56
@@ -615,7 +649,7 @@ CLASSIFIER_ARGS="
      --img-h ${IMG_H} \
      --img-w ${IMG_W} \
      --num-classes ${NUM_CLASSES} \
-     --bf16 \
+     --${data_type} \
      --mask-factor 1.0 \
      --lr-decay-style cosine \
      --lr ${LR} \
@@ -649,6 +683,9 @@ fi
 if [[ $TPSP -eq 1 ]]; then
      export CUDA_DEVICE_MAX_CONNECTIONS=1
      CLASSIFIER_ARGS="--sequence-parallel $CLASSIFIER_ARGS"
+fi
+if [[ $MICS_SHARD_SIZE ]]; then
+     CLASSIFIER_ARGS="--use-MICS $CLASSIFIER_ARGS"
 fi
 
 DATA_ARGS="

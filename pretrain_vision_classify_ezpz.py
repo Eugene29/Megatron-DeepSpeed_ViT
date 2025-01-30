@@ -37,8 +37,12 @@ def model_provider(pre_process=True, post_process=True):
         dpg = mpu.get_data_parallel_group()
     else:
         dpg = None
-    # with deepspeed.zero.MiCS_Init(data_parallel_group=dpg,
-    with deepspeed.zero.Init(data_parallel_group=dpg,
+
+    if args.use_MICS:
+        zero_init = deepspeed.zero.MiCS_Init
+    else:
+        zero_init = deepspeed.zero.Init
+    with zero_init(data_parallel_group=dpg,
                              remote_device=None if args.remote_device == 'none' else args.remote_device,
                              config_dict_or_path=args.deepspeed_config_dict,
                              enabled=args.zero_stage == 3,
@@ -243,6 +247,7 @@ if __name__ == "__main__":
     import time
     from megatron import get_wandb_writer
     train_strt = time.time()
+    # try:
     pretrain(
         train_valid_test_datasets_provider,
         model_provider,
@@ -250,18 +255,10 @@ if __name__ == "__main__":
         forward_step,
         args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
     )
-    # try:
-    # except RuntimeError as e:
-    #     if "CUDA out of memory" in str(e) or "out of memory" in str(e):
-    #     # if "CUDA out of memory" in str(e):
-    #         print_rank_0("\nCUDA OUT OF MEMORY. Forcefully terminating...\n")
-    #         os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
-    #     else:
-    #         raise
     # except Exception as e:
-    #     print_rank_0("\nForcefully terminating...\n")
-    #     print(f"\nERROR MESSAGE: {str(e)}\n")
-    #     os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
+    #     print_rank_0(f"original error message: {str(e)}")
+    #     ## Will this fix the *** longjmp causes uninitialized stack frame ***: terminated?
+    #     raise KeyboardInterrupt()
 
     dist.barrier() ## prevent accidental saving? 
     print_rank_0(f"tot train time: {time.time() - train_strt}")
@@ -277,33 +274,57 @@ if __name__ == "__main__":
         wandb_writer.log(log_dict, step=args.logger_iteration)
 
         ## Log results to compare across different runs
-        if os.environ.get("LOG_RESULTS") == "1":
-            import json
-            fpath = 'logs/results.json'
-            if not os.path.exists(fpath):
-                pardir = os.path.dirname(fpath)
-                os.makedirs(pardir, exist_ok=True)
-                results = {}
-            else:
-                with open(fpath, mode='r') as file:
-                    results = json.load(file)
+        # if os.environ.get("LOG_RESULTS") == "1":
+        #     import json
+        #     fpath = 'logs/results.json'
+        #     if not os.path.exists(fpath):
+        #         pardir = os.path.dirname(fpath)
+        #         os.makedirs(pardir, exist_ok=True)
+        #         results = {}
+        #     else:
+        #         with open(fpath, mode='r') as file:
+        #             results = json.load(file)
                 
-            with open(fpath, mode='w') as file:
-                num_nodes = os.environ.get("SIZE", "NA")
-                GBS = os.environ.get("GBS", "NA")
-                IMG_H = os.environ.get("IMG_H", "NA")
-                method = os.environ.get("method", "NA")
-                log_dict['GBS'] = GBS
-                log_dict['IMG_H'] = IMG_H
-                log_dict['method'] = method
+        #     with open(fpath, mode='w') as file:
+        #         num_nodes = os.environ.get("SIZE", "NA")
+        #         GBS = os.environ.get("GBS", "NA")
+        #         IMG_H = os.environ.get("IMG_H", "NA")
+        #         method = os.environ.get("method", "NA")
+        #         log_dict['GBS'] = GBS
+        #         log_dict['IMG_H'] = IMG_H
+        #         log_dict['method'] = method
 
-                if num_nodes not in results:
-                    results[num_nodes] = [log_dict]
-                else:
-                    results[num_nodes].append(log_dict)
-                json.dump(results, file)
-                # pprint.pprint(results)
+        #         if num_nodes not in results:
+        #             results[num_nodes] = [log_dict]
+        #         else:
+        #             results[num_nodes].append(log_dict)
+        #         json.dump(results, file)
+        #         # pprint.pprint(results)
 
-            pprint.pprint(log_dict)
-            print("Pretrain completed.")
+        #     pprint.pprint(log_dict)
+        print("Pretrain completed.")
+    # raise KeyboardInterrupt("pretrain completed...")
+
+    # dist.barrier()
+
+    # if os.environ.get("FORCE_QUIT") == "1":
+    #     print_rank_0("FORCE QUITTING...")
+    #     os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
+    print_rank_0("switching stderr to /dev/null to prevent endless stream of 'longjmp'")
+    import sys
+    sys.stderr = open(os.devnull, "w")
+
+    # try:
+    # except RuntimeError as e:
+    #     if "CUDA out of memory" in str(e) or "out of memory" in str(e):
+    #     # if "CUDA out of memory" in str(e):
+    #         print_rank_0("\nCUDA OUT OF MEMORY. Forcefully terminating...\n")
+    #         os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
+    #     else:
+    #         raise
+    # except Exception as e:
+    #     print_rank_0("\nForcefully terminating...\n")
+    #     print(f"\nERROR MESSAGE: {str(e)}\n")
+    #     os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
+
     exit()

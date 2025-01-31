@@ -1,4 +1,4 @@
-## Welcome to ALCF ViT repo, maintained by Eugene Ku
+## Welcome to ALCF ViT repo
 
 ## Clone & Init Submodule:
 ```
@@ -8,35 +8,7 @@
 ```
 
 ## Environment
-  Base (Polaris) environment + DeepSpeed(15.1 or higher(?)) + ezpz (sam's library)
+Only base environment is needed for polaris cluster while for aurora, we employ sam's ezpz library. A suitable virtual environment (in flare file-system) is activated by automatically on aurora. 
 
-- ### Installation
-  1. ezpz:
-  ```
-  git clone https://github.com/saforem2/ezpz;
-  cd ezpz;
-  pip install .
-  ```
-  2. DeepSpeed
-  ```
-  pip install deepspeed==0.15.1
-  ```
-- ### Modify `mds_args.sh`
-  - Change env activation in `mds_args.sh`
-
-## Functionality
-  To know about all available functionalities and how to use them, checkout the documentation in `mult_mds.sh`
-  
-## Script
-  For consecutive runs one can:
-  ```
-  bash mult_mds.sh
-  ```
-  
-  For submitting multiple jobs:
-  ```
-  bash mult_qsub.sh
-  ```
-
-## Note:
-  - Most comments written by me are flagged with ## instead of #
+## Notes:
+Main script for entry is mult_mds.sh. In here, you'll need to modify SCRIPT_DIR. There is also descriptions for possible flags. Any other fixed ENV and MDS-related variables can be changed in mult_launch.sh. 

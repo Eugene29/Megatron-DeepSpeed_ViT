@@ -112,7 +112,7 @@ WORKING_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
 cd $WORKING_DIR
 YUNCHANG="${WORKING_DIR}/long-context-attention" ## Custom yunchang (USP)
 # DEEPSPEED="${WORKING_DIR}/DeepSpeed" ## Custom DeepSpeed
-DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps" ## Test DeepSpeed 16.3? 
+DEEPSPEED="/eagle/datascience/eku/test/test_MICS/Megatron-DeepSpeed/deps/deepspeed" ## Overwrite to DeepSpeed 0.16.3 with MICS fix. 
 PYTHONPATH="${DEEPSPEED}:${YUNCHANG}:${PYTHONPATH}"
 export PYTHONPATH="${WORKING_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## HOST NODE
@@ -739,6 +739,7 @@ if [[ $MACHINE == "aurora" ]]; then
 elif [[ $MACHINE == "polaris" ]]; then
      export RDZV_HOST=$(hostname)
      export RDZV_PORT=$RANDOM
+          # --hostfile ${PBS_NODEFILE} \
      run_cmd="mpiexec --verbose --envall -n ${NHOSTS} -ppn 1 --cpu-bind depth -d ${NGPUS} \
           python3 -m torch.distributed.run --rdzv_backend=c10d --rdzv_endpoint="$RDZV_HOST:$RDZV_PORT" --nnodes=${NHOSTS} --nproc_per_node=${NGPU_PER_HOST} \
           ${WORKING_DIR}/pretrain_vision_classify.py \

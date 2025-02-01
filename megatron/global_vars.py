@@ -171,7 +171,7 @@ def _set_wandb_writer(args):
     import pytz
     if os.environ.get("WANDB_MODE") != "disabled":
         ct = pytz.timezone('America/Chicago')
-        WS = f"WS{torch.distributed.get_world_size()}_"
+        WS = f"WS{os.environ.get('NGPUS')}_"
         if "TPSP" in os.environ:
             TP = f"TP-SP{os.environ['TP']}_"
         else:

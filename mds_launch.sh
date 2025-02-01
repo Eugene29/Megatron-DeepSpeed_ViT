@@ -59,6 +59,7 @@ if [[ $MACHINE == "aurora" ]]; then
           export FI_CXI_RX_MATCH_MODE=hybrid
           export CCL_BCAST=double_tree
      }
+     DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps" ## Test DeepSpeed 16.3? 
      set_ccl_vars_on_aurora ## Gordon Bell Run
      export CCL_ALLGATHERV=topo
      export CCL_ALLREDUCE=topo
@@ -96,6 +97,7 @@ elif [[ $MACHINE == "polaris" ]]; then
      WANDB_PROJECT_NAME="PolarisViT"
      DATA_DIR="/eagle/datascience/eku/data"
      FA_VERSION="--use-flash-attn-v2"
+     DEEPSPEED="/eagle/datascience/eku/test/test_MICS/Megatron-DeepSpeed/deps" ## Overwrite to DeepSpeed 0.16.3 with MICS fix. 
      # FA_VERSION="--use-flash-attn-builder" ## TODO: Change back to v2 - why not v3? 
      NGPU_PER_HOST=4
      ## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
@@ -112,7 +114,6 @@ WORKING_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
 cd $WORKING_DIR
 YUNCHANG="${WORKING_DIR}/long-context-attention" ## Custom yunchang (USP)
 # DEEPSPEED="${WORKING_DIR}/DeepSpeed" ## Custom DeepSpeed
-DEEPSPEED="/eagle/datascience/eku/test/test_MICS/Megatron-DeepSpeed/deps/deepspeed" ## Overwrite to DeepSpeed 0.16.3 with MICS fix. 
 PYTHONPATH="${DEEPSPEED}:${YUNCHANG}:${PYTHONPATH}"
 export PYTHONPATH="${WORKING_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## HOST NODE

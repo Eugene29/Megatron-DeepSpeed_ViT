@@ -40,7 +40,11 @@ def model_provider(pre_process=True, post_process=True):
     else:
         dpg = None
     # with deepspeed.zero.MiCS_Init(data_parallel_group=dpg,
-    with deepspeed.zero.Init(data_parallel_group=dpg,
+    if args.use_MICS:
+        zero_init = deepspeed.zero.MiCS_Init
+    else:
+        zero_init = deepspeed.zero.Init
+    with zero_init(data_parallel_group=dpg,
                              remote_device=None if args.remote_device == 'none' else args.remote_device,
                              config_dict_or_path=args.deepspeed_config_dict,
                              enabled=args.zero_stage == 3,
@@ -151,41 +155,31 @@ def get_batch(data_iterator):
 
 def loss_func(labels, output_tensor):
     sp_rank = mpu.get_sequence_parallel_rank()
-    sp_world_size = mpu.get_sequence_parallel_world_size()
+    sp_src_rank = mpu.get_sequence_parallel_src_rank()
+    # sp_world_size = mpu.get_sequence_parallel_world_size()
+    sp_group = mpu.get_sequence_parallel_group()
 
     logits = output_tensor.contiguous().float()
     if sp_rank == 0:
         logits = output_tensor.contiguous().float()
     else:
         logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
-        ## TODO: Would adding barrier help with saving compute? 
 
     outputs = torch.argmax(logits, -1)
     correct = (outputs == labels).float()
     accuracy = torch.mean(correct)
-    if sp_world_size > 1:
-        ## TODO: below will be useful for VIT Auto-encoder
-        # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
-        loss = F.cross_entropy(logits, labels)
-    else:
-        ## TODO: Find a way to not do below compute? 
-        loss = F.cross_entropy(logits, labels)
+    loss = F.cross_entropy(logits, labels)
     
-    import os
-    debug_mode = 'DEBUG_FNAME' in os.environ
-    if debug_mode:
-        debug_fname = os.environ["DEBUG_FNAME"]
-        if sp_rank==0:
-            torch.save(output_tensor, f"{debug_fname}.pt")
+    # print(f"loss {sp_rank}: {loss}", flush=True)
+    ## only sp_src_rank has first clf token, but why...
+    # first_token_loss = loss.detach()
+    # dist.broadcast(tensor=first_token_loss, src=sp_src_rank, group=sp_group)
+    # dist.broadcast(tensor=accuracy, src=sp_src_rank, group=sp_group)
+    # averaged_loss = average_losses_across_data_parallel_group([first_token_loss, accuracy])
 
-        with open(debug_fname, "a") as f:
-            f.write(f"\n[{sp_rank}] output after head: {output_tensor}\n")
-            # f.write(f"\n[{sp_rank}] output after head shape: {output_tensor.shape}\n")
-            f.write(f"\n[{sp_rank}] loss: {loss}\n")
-
+    ## Q. Why doesn't the below ruin our loss and acc as they get reduced across by "noise tokens"? (DP vs. SP looks perfect)
     averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
     return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
-
 
 def forward_step(data_iterator, model):
     """Forward step."""
@@ -281,33 +275,33 @@ if __name__ == "__main__":
         wandb_writer.log(log_dict, step=args.logger_iteration)
 
         ## Log results to compare across different runs
-        if os.environ.get("LOG_RESULTS") == "1":
-            import json
-            fpath = 'logs/results.json'
-            if not os.path.exists(fpath):
-                pardir = os.path.dirname(fpath)
-                os.makedirs(pardir, exist_ok=True)
-                results = {}
-            else:
-                with open(fpath, mode='r') as file:
-                    results = json.load(file)
+        # if os.environ.get("LOG_RESULTS") == "1":
+        #     import json
+        #     fpath = 'logs/results.json'
+        #     if not os.path.exists(fpath):
+        #         pardir = os.path.dirname(fpath)
+        #         os.makedirs(pardir, exist_ok=True)
+        #         results = {}
+        #     else:
+        #         with open(fpath, mode='r') as file:
+        #             results = json.load(file)
                 
-            with open(fpath, mode='w') as file:
-                num_nodes = os.environ.get("SIZE", "NA")
-                GBS = os.environ.get("GBS", "NA")
-                IMG_H = os.environ.get("IMG_H", "NA")
-                method = os.environ.get("method", "NA")
-                log_dict['GBS'] = GBS
-                log_dict['IMG_H'] = IMG_H
-                log_dict['method'] = method
+        #     with open(fpath, mode='w') as file:
+        #         num_nodes = os.environ.get("SIZE", "NA")
+        #         GBS = os.environ.get("GBS", "NA")
+        #         IMG_H = os.environ.get("IMG_H", "NA")
+        #         method = os.environ.get("method", "NA")
+        #         log_dict['GBS'] = GBS
+        #         log_dict['IMG_H'] = IMG_H
+        #         log_dict['method'] = method
 
-                if num_nodes not in results:
-                    results[num_nodes] = [log_dict]
-                else:
-                    results[num_nodes].append(log_dict)
-                json.dump(results, file)
-                # pprint.pprint(results)
+        #         if num_nodes not in results:
+        #             results[num_nodes] = [log_dict]
+        #         else:
+        #             results[num_nodes].append(log_dict)
+        #         json.dump(results, file)
+        #         # pprint.pprint(results)
 
-            pprint.pprint(log_dict)
+        #     pprint.pprint(log_dict)
         print("Pretrain completed.", flush=True)
     # exit()

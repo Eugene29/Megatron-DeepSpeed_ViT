@@ -36,8 +36,8 @@ DEBUG={SP, DP}                                        ## Triggers debug mode: ru
 ZERO={0,1,2,3}                                        ## Stages of DeepSpeed Zero. 0 by default
 ACT_CKPT={0,1}                                        ## set ACT_CKPT to anything to turn on activation checkpointing
 VIT3D={0,1}                                           ## Switch to 3DVIT. Must use Toy dataset for now. By default, dataset size is [GBS, p*factor, p*factor, p*factor, 1] 
-                                                         where p=16 (patch size) by default. One can change in mds_args.sh
-VIT=string                                            ## Size of VIT. Refer to mds_args.sh for possible models
+                                                         where p=16 (patch size) by default. One can change in mds_launch.sh
+VIT=string                                            ## Size of VIT. Refer to mds_launch.sh for possible models
 TPSP={0,1}                                            ## Upgrade from TP to TP-SP
 LOG_RESULTS={0,1}                                     ## log results (tflops, mem fpt, samples/sec) in a json file
 MICS_SHARD_SIZE                                       ## Size of your MICS partition group

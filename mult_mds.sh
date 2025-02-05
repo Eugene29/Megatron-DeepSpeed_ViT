@@ -1,6 +1,6 @@
-# SCRIPT_PTH=/eagle/datascience/eku/Megatron-DeepSpeed_ViT/mult_mds.sh ## Use this if submitting this script as qsub (also needed if using batch scripts?)
-# SCRIPT_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
-SCRIPT_DIR=$(dirname /lus/flare/projects/Aurora_deployment/eku/Megatron-DeepSpeed_ViT/mult_mds.sh | xargs realpath)
+# SCRIPT_PTH=${BASH_SOURCE[0]} ## 
+SCRIPT_PTH="/lus/flare/projects/Aurora_deployment/eku/Megatron-DeepSpeed_ViT/mult_mds.sh" ## 
+SCRIPT_DIR=$(dirname $SCRIPT_PTH | xargs realpath)
 LOGDIR=$SCRIPT_DIR/logs
 MAIN_SCRIPT=$SCRIPT_DIR/mds_launch.sh
 mkdir -p $LOGDIR
@@ -31,6 +31,11 @@ mkdir -p $LOGDIR
 # VIT=string                                            ## Size of VIT. Refer to mds_args.sh for possible models
 # TPSP={0,1}                                            ## Upgrade from TP to TP-SP
 # LOG_RESULTS={0,1}                                     ## log results (tflops, mem fpt, samples/sec) in a json file
+# MICS_SHARD_SIZE                                       ## Size of your MICS partition group
+# fp16                                                  ## enable fp16
+# bf16                                                  ## use datatype bf16
+# LOG_COMMS                                             ## log/profile communications through deepspeed
+# PROF_FLOPS                                            ## profile flop counts with detail through deepspeed
 
 ################################ Notes ################################
 # 1. Pass either GBS or MBS
@@ -40,17 +45,41 @@ mkdir -p $LOGDIR
 ################################ Global ARGUMENTS ################################
 num_node=$(wc -l < $PBS_NODEFILE)
 export drop_last_batch_with_GBS=1
-# export GLOBAL_MEAN_POOLING=1
+export GLOBAL_MEAN_POOLING=1
 export WANDB_MODE=disabled
 export POS_ENCODING=1
-# export PROFILE=1 ## Profiling gets hung on Aurora
+# export MICS_SHARD_SIZE=24
+# export PROFILE=1 ## Profiling hangs on Aurora
+export PROF_FLOPS=1
+export LOG_COMMS=1
+export bf16=1
+# export fp16=1
 export FA=1
 
 ################################# EXAMPLE RUNS #################################
-# export MBS=1; export DATA=TOY; export factor=64; export VIT="22B"; #export hpz=4
-export MBS=48; export DATA=CIFAR; export factor=64; export VIT="LARGE+"; #export hpz=4
-SP=24 ZERO=3 NUM_ITERS=200 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
-# SP=1 ZERO=3 NUM_ITERS=200 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# export MBS=1; export DATA=TOY; export factor=64; export VIT="59B"; export ACT_CKPT=1 #export hpz=4
+# export GBS=3; export DATA=TOY; export factor=128; export VIT="22B"; export ACT_CKPT=1 #export hpz=4
+# export GBS=12; export DATA=TOY; export factor=66; export VIT="22B"; export ACT_CKPT=1 #export hpz=4
+# export GBS=3; export DATA=TOY; export factor=128; export VIT="22B"; export ACT_CKPT=1 #export hpz=4
+# export GBS=48; export DATA=TOY; export factor=64; export VIT="4B"; export ACT_CKPT=1 #export hpz=4
+export MBS=1; export DATA=TOY; export factor=66; export VIT="LARGE+"; #export hpz=4
+# export MBS=1; export DATA=CIFAR; export factor=64; export VIT="LARGE+"; #export hpz=4
+# echo > "/lus/flare/projects/Aurora_deployment/eku/Megatron-DeepSpeed_ViT/logs/all2all.log"
+SP=1 ZERO=3 NUM_ITERS=15 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# SP=1 NUM_ITERS=15 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+
+# SP=4 ZERO=3 NUM_ITERS=15 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# SP=1 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+
+# SP=1 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/benchmark0.log
+# export VIT="HUGE"
+# SP=1 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/benchmark1.log
+# export VIT="GIANT"
+# SP=1 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/benchmark2.log
+# export VIT="4B";
+# SP=1 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/benchmark3.log
+# export factor=512;
+# SP=1 NUM_ITERS=10 bash $MAIN_SCRIPT |& tee $LOGDIR/benchmark4.log
 
 # export MBS=1; export DATA=TOY; export factor=32; export VIT="LARGE+"; export ZERO=3 #export hpz=4
 # SP=12 NUM_ITERS=6 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log

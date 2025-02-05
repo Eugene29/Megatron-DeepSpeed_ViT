@@ -4,6 +4,9 @@
 echo "Launching Megatron Deepspeed VIT."
 TZ="America/Chicago" date ## Q. How does this command print something?
 
+## COMMUNICATION
+NHOSTS=$(wc -l < "${PBS_NODEFILE}")
+
 get_machine() {
     machine=$(hostname)
     if [[ $(hostname) == x4* ]]; then
@@ -34,7 +37,6 @@ if [[ $MACHINE == "aurora" ]]; then
      DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
      . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate ## env with ezpz, etc.
      FA_VERSION="--use-flash-attn-builder"
-     # FA_VERSION="--use-flash-attn-triton"
      NGPU_PER_HOST=12
      set_ccl_vars_on_aurora() {
           export CCL_KVS_MODE=mpi
@@ -46,7 +48,10 @@ if [[ $MACHINE == "aurora" ]]; then
 
           export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
           export CCL_PROCESS_LAUNCHER=pmix # Required by Aurora mpich
-          export FI_PROVIDER=cxi           # Required by Aurora mpich
+          if [[ $NHOSTS -gt 1 ]]; then
+            ## the following code breaks for node=1
+            export FI_PROVIDER=cxi           # Required by Aurora mpich
+          fi
           export PALS_PMI=pmix             # Required by Aurora mpich
           export CCL_ATL_TRANSPORT=mpi     # Required by Aurora mpich
           export TORCH_LLM_ALLREDUCE=1
@@ -60,12 +65,14 @@ if [[ $MACHINE == "aurora" ]]; then
           export CCL_BCAST=double_tree
      }
      DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps" ## Test DeepSpeed 16.3? 
+     # DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps2/DeepSpeed" ## Test DeepSpeed 16.3? 
      set_ccl_vars_on_aurora ## Gordon Bell Run
      export CCL_ALLGATHERV=topo
      export CCL_ALLREDUCE=topo
      export CCL_BCAST=double_tree
      export CCL_BARRIER=ring
      export CCL_ALLREDUCE_SCALEOUT=ring
+    #  export CCL_ALLREDUCE_SCALEOUT=rabenseifener
      export CCL_ALLGATHER_SCALEOUT=ring
      export CCL_ALLGATHERV_SCALEOUT=ring
 elif [[ $MACHINE == "polaris" ]]; then 
@@ -98,6 +105,7 @@ elif [[ $MACHINE == "polaris" ]]; then
      DATA_DIR="/eagle/datascience/eku/data"
      FA_VERSION="--use-flash-attn-v2"
      DEEPSPEED="/eagle/datascience/eku/test/test_MICS/Megatron-DeepSpeed/deps" ## Overwrite to DeepSpeed 0.16.3 with MICS fix. 
+     
      # FA_VERSION="--use-flash-attn-builder" ## TODO: Change back to v2 - why not v3? 
      NGPU_PER_HOST=4
      ## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
@@ -119,9 +127,6 @@ export PYTHONPATH="${WORKING_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## HOST NODE
 # export MASTER_ADDR=localhost
 # export MASTER_PORT=6000
-
-## COMMUNICATION
-NHOSTS=$(wc -l < "${PBS_NODEFILE}")
 
 ## LIMIT GPUs VISIBLE (FOR 1-NODE EXPERIMENTS)
 if [ ${SIZE:-"-1"} -eq 1 ]; then
@@ -239,7 +244,11 @@ elif [[ $DATA == 'TOY' ]]; then
     LR_WARMUP_SAMPLES=0
 
     ## DATA
-    DS_CONFIG_FNAME="TOY_N$NHOSTS.json"
+    MICS=""
+    if [[ $MICS_SHARD_SIZE -gt 1 ]]; then
+        MICS="_MICS"
+    fi
+    DS_CONFIG_FNAME="TOY_N${NHOSTS}${MICS}.json"
 else
     echo "Dataset not implemented"
     exit 1
@@ -256,19 +265,20 @@ fi
 
 export ZERO=${ZERO:-0}
 export hpz=${hpz:-1}
-ds_config_MICS=""
+mics_ds_config=""
 if [[ $MICS_SHARD_SIZE ]]; then
-     ds_config_MICS="\"mics_hierarchical_params_gather\": true,
-                     \"mics_shard_size\": $MICS_SHARD_SIZE,"
+    mics_ds_config="
+    \"mics_hierarchical_params_gather\": true,
+    \"mics_shard_size\": $MICS_SHARD_SIZE,"
 fi
 
 ## DATA TYPE
-ds_config_data_type=""
+data_type_ds_config=""
 if [[ $fp16 == 1 && $bf16 == 16 ]]; then
     echo "you cannot choose both fp16 and bf16"
     exit 1
 elif [[ $fp16 == 1 ]]; then
-    ds_config_data_type='
+    data_type_ds_config='
     "communication_data_type": "fp16",
     "fp16": {
         "enabled": true,
@@ -279,7 +289,7 @@ elif [[ $fp16 == 1 ]]; then
         "initial_scale_power": 11
     },'
 elif [[ $bf16 == 1 ]]; then
-    ds_config_data_type='
+    data_type_ds_config='
     "communication_data_type": "bf16",
         "bf16": {
         "enabled": true
@@ -293,6 +303,28 @@ if [[ $fp16 == 1 ]]; then
 elif [[ $bf16 == 1 ]]; then
     data_type='bf16'
 fi
+flops_profiler=''
+if [[ $PROF_FLOPS -eq 1 ]]; then
+    flops_profiler='
+    "flops_profiler": {
+                    "enabled": true,
+                    "profile_step": 3,
+                    "module_depth": -1,
+                    "top_modules": 1,
+                    "detailed": true,
+                    "output_file": null
+                    },'
+fi
+comms_logger=''
+if [[ $LOG_COMMS -eq 1 ]]; then
+    comms_logger='
+    "comms_logger": {
+        "enabled": true,
+        "verbose": false,
+        "prof_all": true,
+        "debug": false
+    },'
+fi
 
 ## DS CONFIG
 cat <<EOF > "$WORKING_DIR/$DS_CONFIG_FNAME"
@@ -305,27 +337,22 @@ cat <<EOF > "$WORKING_DIR/$DS_CONFIG_FNAME"
         "stage": $ZERO,
         "overlap_comm": true,
         "zero_hpz_partition_size": $hpz,
-        $ds_config_MICS
+        $mics_ds_config
         "contiguous_gradients": true
     },
 
     "gradient_clipping": 1.0,
     "prescale_gradients": false,
 
-    $ds_config_data_type
+    $data_type_ds_config
+    $comms_logger
+    $flops_profiler
 
     "gradient_accumulation_steps": $GAS, 
-
     "wall_clock_breakdown" : false
 }
 EOF
 
-#   "comms_logger": {
-#     "enabled": true,
-#     "verbose": false,
-#     "prof_all": true,
-#     "debug": false
-#   }
 
 ## fp16
 
@@ -360,14 +387,7 @@ EOF
 #             },
 #     "wall_clock_breakdown": false,
 #     "logging_level": "WARNING",
-#     "flops_profiler": {
-#                         "enabled": false,
-#                         "profile_step": 10,
-#                         "module_depth": -1,
-#                         "top_modules": 1,
-#                         "detailed": false,
-#                         "output_file": null
-#                         },
+
 #     "zero_optimization": {
 #         "stage": $ZERO,
 #         "overlap_comm": true
@@ -415,6 +435,12 @@ elif [[ $VIT == "LARGE+" ]]; then
     HSIZE=1032
     FFN_HSIZE=4096
     NUM_HEADS=24
+elif [[ $VIT == "LARGE++" ]]; then
+    ## VIT-LARGE (320M)
+    NLAYERS=24
+    HSIZE=1056
+    FFN_HSIZE=4096
+    NUM_HEADS=12
 elif [[ $VIT == "HUGE" ]]; then
     ## VIT-HUGE (632M)
     NLAYERS=32
@@ -422,7 +448,7 @@ elif [[ $VIT == "HUGE" ]]; then
     FFN_HSIZE=5120
     NUM_HEADS=16
 elif [[ $VIT == "GIANT" ]]; then
-    ## ?B
+    ## 1.8B
     NLAYERS=48
     HSIZE=1664
     FFN_HSIZE=8192
@@ -433,6 +459,18 @@ elif [[ $VIT == "ENORMOUS" ]]; then
     HSIZE=1792
     FFN_HSIZE=15360
     NUM_HEADS=16
+elif [[ $VIT == "HUGE" ]]; then
+    ## VIT-HUGE (632M)
+    NLAYERS=32
+    HSIZE=1280
+    FFN_HSIZE=5120
+    NUM_HEADS=16
+elif [[ $VIT == "1B" ]]; then
+    ## 1.0B
+    NLAYERS=20
+    HSIZE=2052
+    NUM_HEADS=12
+    FFN_HSIZE=$((4 * 2052))
 elif [[ $VIT == "2B" ]]; then
     ## 1.6B
     NLAYERS=10
@@ -448,9 +486,9 @@ elif [[ $VIT == "3B" ]]; then
 elif [[ $VIT == "4B" ]]; then
     ## 3.8B
     NLAYERS=48
-    HSIZE=2560
+    HSIZE=2568
     FFN_HSIZE=$((4 * HSIZE))
-    NUM_HEADS=32
+    NUM_HEADS=24
 elif [[ $VIT == "5B" ]]; then
     ## 5B
     NLAYERS=28

@@ -153,40 +153,66 @@ def get_batch(data_iterator):
 
 def loss_func(labels, output_tensor):
     sp_rank = mpu.get_sequence_parallel_rank()
-    sp_world_size = mpu.get_sequence_parallel_world_size()
+    sp_src_rank = mpu.get_sequence_parallel_src_rank()
+    # sp_world_size = mpu.get_sequence_parallel_world_size()
+    sp_group = mpu.get_sequence_parallel_group()
 
     logits = output_tensor.contiguous().float()
     if sp_rank == 0:
         logits = output_tensor.contiguous().float()
     else:
         logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
-        ## TODO: Would adding barrier help with saving compute? 
 
     outputs = torch.argmax(logits, -1)
     correct = (outputs == labels).float()
     accuracy = torch.mean(correct)
-    if sp_world_size > 1:
-        ## TODO: below will be useful for VIT Auto-encoder
-        # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
-        loss = F.cross_entropy(logits, labels)
-    else:
-        ## TODO: Find a way to not do below compute? 
-        loss = F.cross_entropy(logits, labels)
+    loss = F.cross_entropy(logits, labels)
     
-    import os
-    debug_mode = 'DEBUG_FNAME' in os.environ
-    if debug_mode:
-        debug_fname = os.environ["DEBUG_FNAME"]
-        if sp_rank==0:
-            torch.save(output_tensor, f"{debug_fname}.pt")
+    # print(f"loss {sp_rank}: {loss}", flush=True)
+    ## only sp_src_rank has first clf token, but why...
+    # first_token_loss = loss.detach()
+    # dist.broadcast(tensor=first_token_loss, src=sp_src_rank, group=sp_group)
+    # dist.broadcast(tensor=accuracy, src=sp_src_rank, group=sp_group)
+    # averaged_loss = average_losses_across_data_parallel_group([first_token_loss, accuracy])
 
-        with open(debug_fname, "a") as f:
-            f.write(f"\n[{sp_rank}] output after head: {output_tensor}\n")
-            # f.write(f"\n[{sp_rank}] output after head shape: {output_tensor.shape}\n")
-            f.write(f"\n[{sp_rank}] loss: {loss}\n")
-
+    ## Q. Why doesn't the below ruin our loss and acc as they get reduced across by "noise tokens"? (DP vs. SP looks perfect)
     averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
     return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
+    # sp_rank = mpu.get_sequence_parallel_rank()
+    # sp_world_size = mpu.get_sequence_parallel_world_size()
+
+    # logits = output_tensor.contiguous().float()
+    # if sp_rank == 0:
+    #     logits = output_tensor.contiguous().float()
+    # else:
+    #     logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
+    #     ## TODO: Would adding barrier help with saving compute? 
+
+    # outputs = torch.argmax(logits, -1)
+    # correct = (outputs == labels).float()
+    # accuracy = torch.mean(correct)
+    # if sp_world_size > 1:
+    #     ## TODO: below will be useful for VIT Auto-encoder
+    #     # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
+    #     loss = F.cross_entropy(logits, labels)
+    # else:
+    #     ## TODO: Find a way to not do below compute? 
+    #     loss = F.cross_entropy(logits, labels)
+    
+    # import os
+    # debug_mode = 'DEBUG_FNAME' in os.environ
+    # if debug_mode:
+    #     debug_fname = os.environ["DEBUG_FNAME"]
+    #     if sp_rank==0:
+    #         torch.save(output_tensor, f"{debug_fname}.pt")
+
+    #     with open(debug_fname, "a") as f:
+    #         f.write(f"\n[{sp_rank}] output after head: {output_tensor}\n")
+    #         # f.write(f"\n[{sp_rank}] output after head shape: {output_tensor.shape}\n")
+    #         f.write(f"\n[{sp_rank}] loss: {loss}\n")
+
+    # averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
+    # return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
 
 
 def forward_step(data_iterator, model):

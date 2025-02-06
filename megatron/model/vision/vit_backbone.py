@@ -195,7 +195,7 @@ class VitBackbone(MegatronModule):
                 print("beaware, your sequence is uneven")
             if not (args.num_attention_heads % sp == 0 and args.num_attention_heads > sp):
                 print("beaware, your head count is invalid (i.e. (head count indivisible by SP) or (SP > head count)")
-            # assert self.seq_length % sp == 0
+            assert self.seq_length % sp == 0, "uneven sequence ulysses is not yet implemented."
             # assert args.num_attention_heads % sp == 0, "Num head is the max sp degree for Ulysses"
 
 

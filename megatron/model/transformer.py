@@ -661,7 +661,8 @@ class ParallelAttention(MegatronModule):
                 self.dist_attn = DistributedAttention(
                     local_attn, 
                     parallel_state.get_sequence_parallel_group(), ## group that needs to communicate together. (if 1, then it communicates with other devices in 1)
-                    gather_idx=1 if args.use_flash_attn_v1 or args.use_flash_attn_v2 else 0) 
+                    gather_idx=1 if (args.use_flash_attn_v1 or args.use_flash_attn_v2 or args.use_flash_attn_builder)
+                    else 0) 
                 # flash_attn_cuda assumes [b, s, nh, hd] layout, we need to make sure all2all gathers into the correct sequence dimension.
         else:
             if self.use_flash_attn:
@@ -873,6 +874,9 @@ class ParallelAttention(MegatronModule):
             # otherwise, only relative positional embedding takes effect
             # value_layer = apply_rotary_pos_emb(value_layer, k_pos_emb)
 
+        # import time
+        # torch.xpu.synchronize()
+        # strt = time.time()
         args = get_args()
         if self.enable_ds_sequence_parallel:
             if args.USP_ring:
@@ -940,6 +944,16 @@ class ParallelAttention(MegatronModule):
                 else:
                     context_layer = self.core_attention(
                         query_layer, key_layer, value_layer, attention_mask)
+        # torch.xpu.synchronize()
+        # end = time.time()
+        # time_taken = end - strt
+        # B = args.global_batch_size
+        # s = args.seq_length
+        # h = args.hidden_size
+        # world_size = args.world_size
+        # Tflops = 4 * B * s**2 * h / 1e12 ## QK^T, (NxN) @ V
+        # print(f"FA time taken (including comm): {time_taken}", flush=True)
+        # print(f"FA Tflops per tile: {Tflops/time_taken/world_size}", flush=True)
 
         # =================
         # Output. [sq, b, h]

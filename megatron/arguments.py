@@ -53,6 +53,7 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
 
     parser = deepspeed.add_config_arguments(parser)
     parser.add_argument('--use-MICS', action='store_true', help='enable MICS')
+    parser.add_argument('--use-toy-data', action='store_true', help='use toy dataset')
 
     # Parse.
     if ignore_unknown_args:

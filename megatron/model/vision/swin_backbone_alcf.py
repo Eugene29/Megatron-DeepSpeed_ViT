@@ -71,7 +71,7 @@ def swin_flop_count(
     FA = 2 * Bw * L_w**2 * d
     MLP = 2 * Bw * L_w * args.hidden_size * args.ffn_hidden_size
     fwd_flop = (QKVO+FA+MLP)*l + pre_and_post_process
-    return 3 * fwd_flop
+    return 6 * fwd_flop  # 3x for fwd+bwd, 2x for mult+add operations
 
 def window_partition(x, window_size):
     r"""Partition image (B, h, w, d) into sequence of windows or patches 

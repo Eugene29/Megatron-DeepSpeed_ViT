@@ -1409,7 +1409,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             from megatron.model.vision.swin_backbone_alcf import swin_flop_count
             return swin_flop_count(args)
         else:
-            return 0  ## decreased everything by x2. Was it really doubled? 
             B = batch_size ## Global Batch Size
             s = args.seq_length ## sequence length
             h = args.hidden_size ## emb hidden dimension
@@ -1418,10 +1417,10 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             p = args.patch_dim ## patch size
             c = args.num_channels ## num channels
 
-            Att_computation = 2 * B * s**2 * h ## QK^T, (NxN) @ V
-            Lin_Transform = 4 * B * s * h**2 ## Q, K, V, O
-            MLP = 2 * B * s * h * h_ ## 2 Lin Transform
-            Lin_Embedding = B * s * p**2 * c * h ## (B s p^2*c) @ (p^2*c h)
+            Att_computation = 4 * B * s**2 * h ## QK^T, (NxN) @ V
+            Lin_Transform = 8 * B * s * h**2 ## Q, K, V, O
+            MLP = 4 * B * s * h * h_ ## 2 Lin Transform
+            Lin_Embedding = 2 * B * s * p**2 * c * h ## (B s p^2*c) @ (p^2*c h)
             ## Since num_classes << s * h, we can ignore num_classes.
 
             return 3 * (l*(Att_computation+Lin_Transform+MLP) + Lin_Embedding) ## x3 for fwd + bwd(2x)

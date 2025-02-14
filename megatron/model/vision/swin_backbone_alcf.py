@@ -1,49 +1,20 @@
+from megatron.model.module import MegatronModule
+
+import torch
+import torch.distributed  as dist
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint, checkpoint_sequential
+import einops
+import argparse
+from timm.layers import to_2tuple
+# from timm.layers import DropPath, Mlp, ClassifierHead, to_2tuple, _assert
+
 import logging
 import math
 from typing import Tuple, Optional, List, Union, Any, Type
 from types import SimpleNamespace
 from ruamel.yaml import YAML
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.checkpoint import checkpoint, checkpoint_sequential
-from megatron.model.module import MegatronModule
-
-from timm.layers import DropPath, Mlp, ClassifierHead, to_2tuple, _assert
-
-"""
-Adapted from timm v0.9.2:
- https://github.com/huggingface/pytorch-image-models/blob/v0.9.2/timm/models/swin_transformer_v2_cr.py
- 
- which is a PyTorch impl of : `Swin Transformer V2: Scaling Up Capacity and Resolution`
-    - https://arxiv.org/pdf/2111.09883
-
-Key components of the module:
-- PatchEmbed: Converts a 2D image to a sequence of flattened, non-overlapping patches and embeds them.
-- SwinTransformerV2CrBlock: Implements a block of the Swin Transformer with options for relative positional biases and shifted windows for attention.
-- SwinTransformerV2CrStage: Defines a stage in the Swin Transformer, potentially with multiple layers of SwinTransformerV2CrBlock.
-- SwinTransformerV2Cr: The main class representing the Swin Transformer V2 model, handling the overall architecture setup, including stacking of stages and producing final outputs.
-- WindowMultiHeadAttention and WindowMultiHeadAttentionNoPos: Implement multi-head self-attention mechanisms over windows of the input feature map, with optional relative positional encoding.
-
-Functions:
-- bchw_to_bhwc, bhwc_to_bchw: Utility functions to transpose tensors between the batch-channel-height-width (BCHW) format and the batch-height-width-channel (BHWC) format.
-- window_partition, window_reverse: Functions to partition a feature map into windows and to reverse this partitioning, respectively.
-"""
-
-# Adapted from timm v0.9.2:
-# https://github.com/huggingface/pytorch-image-models/blob/v0.9.2/timm/models/swin_transformer_v2_cr.py
-
-
-def bchw_to_bhwc(x: torch.Tensor) -> torch.Tensor:
-    """Permutes a tensor from the shape (B, C, H, W) to (B, H, W, C). """
-    return x.permute(0, 2, 3, 1)
-
-
-def bhwc_to_bchw(x: torch.Tensor) -> torch.Tensor:
-    """Permutes a tensor from the shape (B, H, W, C) to (B, C, H, W). """
-    return x.permute(0, 3, 1, 2)
-
 
 def swin_from_yaml(fname, checkpoint_stages=False):
     yaml = YAML()
@@ -72,47 +43,40 @@ def swinv2net(params, checkpoint_stages=False):
                   checkpoint_stages=act_ckpt,
                   residual=params.residual
     )
-                  
-# def swinv2net_megatron_deepspeed():
-#     # args = get_args()
+ 
+def swin_flop_count(
+    args: argparse.Namespace
+) -> int:
+    img_h, img_w = args.img_h, args.img_w
+    p = args.patch_dim
+    if args.swin_window_size is not None:
+        assert isinstance(args.swin_window_size, int), \
+            "haven't thought about non-square window size yet"
+        L_w = args.swin_window_size**2  # seq length per window
+    else:  ## Fall back to window2image ratio
+        assert (img_h/args.swin_window2image_ratio) % p == 0 
+        assert (img_w/args.swin_window2image_ratio) % p == 0 
+        window_size_h = img_h / args.swin_window2image_ratio / p
+        window_size_w = img_w / args.swin_window2image_ratio / p
+        L_w = window_size_h * window_size_w
+    B = args.global_batch_size
+    l = args.num_layers
+    N_w = img_h * img_w / L_w / p**2 # total num windows
+    Bw = B * N_w  # num total windows
+    c = args.num_channels
+    d = args.hidden_size
 
-#     img_size: int = [32, 32]
-#     patch_size: int = 2
-#     depths: list[int] = [24]
-#     num_heads: list[int] = 12
-#     in_chans: int = 3
-#     out_chans: int = 3
-#     embed_dim: int = 1056
-#     # window_size: 
-#     ## Q. sequence length per widnow = (img_size / img_window_ratio)^2
-#     img_window_ratio: int = 4  
-#     drop_path_rate = 0
-#     full_pos_embed: bool = True
-#     rel_pos: bool = False
-#     mlp_ratio: float = 4.
-#     checkpoint_stages: bool = False  # no act(?) checkpointing for now
-#     residual: bool = False
+    pre_and_post_process = 2 * Bw * p**2 * c * d
+    QKVO = 4 * Bw * L_w * d**2
+    FA = 2 * Bw * L_w**2 * d
+    MLP = 2 * Bw * L_w * args.hidden_size * args.ffn_hidden_size
+    fwd_flop = (QKVO+FA+MLP)*l + pre_and_post_process
+    return 3 * fwd_flop
 
-#     swin = SwinTransformerV2Cr(
-#         img_size=img_size,
-#         patch_size=patch_size,
-#         depths = depths,
-#         num_heads=(num_heads,),
-#         in_chans=in_chans,
-#         out_chans=out_chans,
-#         embed_dim=embed_dim,
-#         img_window_ratio=img_window_ratio,
-#         drop_path_rate=drop_path_rate,
-#         full_pos_embed=full_pos_embed,
-#         rel_pos=rel_pos,
-#         mlp_ratio=mlp_ratio,
-#         checkpoint_stages=checkpoint_stages,
-#         residual=residual
-#     )
-#     return swin
+def window_partition(x, window_size):
+    r"""Partition image (B, h, w, d) into sequence of windows or patches 
+    (B*s, w_h, w_w, C)
 
-def window_partition(x, window_size: Tuple[int, int]):
-    """
     Args:
         x: (B, H, W, C)
         window_size (int): window size
@@ -121,59 +85,56 @@ def window_partition(x, window_size: Tuple[int, int]):
         windows: (num_windows*B, window_size, window_size, C)
     """
     B, H, W, C = x.shape
-    x = x.view(B, H // window_size[0], window_size[0], W // window_size[1], window_size[1], C)
-    windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size[0], window_size[1], C)
+    window_h, window_w = window_size
+    x = x.view(
+        B, H // window_h, window_h, W // window_w, window_w, C
+    )  # [B, N_h, N_w, w_h, w_w, C]
+    windows = x.permute(0, 1, 3, 2, 4, 5).reshape(
+        -1, window_h, window_w, C
+    )  # [B*s, w_h, w_w, C]
     return windows
 
-def window_reverse(
-    windows, window_size: Tuple[int, int], img_size: Tuple[int, int]
-):
-    """
+def window_partition_reverse(windows, window_size, img_size):
+    r"""Reverse the window partitioning (B*s, W_h, W_w, C) -> (B, H, W, C)
     Args:
-        windows: (num_windows * B, window_size[0], window_size[1], C)
-        window_size (Tuple[int, int]): Window size
-        img_size (Tuple[int, int]): Image size
+        windows: (num_windows*B, window_size, window_size, C)
+        window_size (int): Window size
+        H (int): Height of image
+        W (int): Width of image
 
     Returns:
         x: (B, H, W, C)
     """
     H, W = img_size
-    C = windows.shape[-1]
-    # TODO: Shouldn't the patch division be next to H or W? 
-    x = windows.view(-1, H // window_size[0], window_size[0],
-                     W // window_size[1], window_size[1], C)
-    x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, H, W, C)
+    window_h, window_w = window_size
+    B = int(windows.shape[0] / (H * W / window_h / window_w))
+    x = windows.view(B, H // window_h, W // window_w, window_h, window_w, -1)
+    # [B, N_h, N_w, w_h, w_w, C]
+    x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
+    # [B, H, W, C]
     return x
 
-# def window_partition(x, window_size):
-#     r"""
-#     Args:
-#         x: (B, H, W, C)
-#         window_size (int): window size
 
-#     Returns:
-#         windows: (num_windows*B, window_size, window_size, C)
-#     """
-#     B, H, W, C = x.shape
-#     x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
-#     windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
-#     return windows
+class Mlp(nn.Module):
+    def __init__(
+        self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.
+    ):
+        super().__init__()
+        out_features = out_features or in_features
+        hidden_features = hidden_features or in_features
+        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.act = act_layer()
+        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.drop = nn.Dropout(drop)
 
-# def window_reverse(windows, window_size, H, W):
-#     r"""
-#     Args:
-#         windows: (num_windows*B, window_size, window_size, C)
-#         window_size (int): Window size
-#         H (int): Height of image
-#         W (int): Width of image
-
-#     Returns:
-#         x: (B, H, W, C)
-#     """
-#     B = int(windows.shape[0] / (H * W / window_size / window_size))
-#     x = windows.view(B, H // window_size, W // window_size, window_size, window_size, -1)
-#     x = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(B, H, W, -1)
-#     return x
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+        x = self.drop(x)
+        return x
+    
 
 class WindowMultiHeadAttentionNoPos(MegatronModule):
     r"""This class implements window-based Multi-Head-Attention with log-spaced continuous position bias.
@@ -204,173 +165,38 @@ class WindowMultiHeadAttentionNoPos(MegatronModule):
         self.num_heads: int = num_heads
         self.sequential_attn: bool = sequential_attn
 
-        self.qkv = nn.Linear(in_features=dim, out_features=dim * 3, bias=True)
+        self.qkv = nn.Linear(in_features=dim, out_features=3*dim, bias=True)
         self.attn_drop = nn.Dropout(drop_attn)
         self.proj = nn.Linear(in_features=dim, out_features=dim, bias=True)
         self.proj_drop = nn.Dropout(drop_proj)
         # # NOTE old checkpoints used inverse of logit_scale ('tau') following the paper, see conversion fn
         # self.logit_scale = nn.Parameter(torch.log(10 * torch.ones(num_heads)))
 
-
-    # def update_input_size(self, new_window_size: int, **kwargs: Any) -> None:
-    #     """Method updates the window size and so the pair-wise relative positions
-
-    #     Args:
-    #         new_window_size (int): New window size
-    #         kwargs (Any): Unused
-    #     """
-    #     # Set new window size and new pair-wise relative positions
-    #     self.window_size: int = new_window_size
-
-    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, mask: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """ Forward pass.
         Args:
-            x (torch.Tensor): Input tensor of the shape (B * windows, N, C)
+            x (torch.Tensor): Input tensor of the shape (B * windows, L, C)
             mask (Optional[torch.Tensor]): Attention mask for the shift case
 
         Returns:
-            Output tensor of the shape [B * windows, N, C]
+            Output tensor of the shape [B * windows, L, C]
         """
         Bw, L, C = x.shape
+        qkv = self.qkv(x).view(
+            Bw, L, 3, self.num_heads, C // self.num_heads
+        ).permute(2, 0, 3, 1, 4)  # Bw, L, C -> 3, Bw, hc, L, hs
+        query, key, value = [x.contiguous() for x in qkv.unbind(0)]
 
-        qkv = self.qkv(x).view(Bw, L, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        query, key, value = qkv.unbind(0)
+        # Flash Attention  
+        # TODO: Is cosine attention in our interest or is normalizing query and
+        # key before attention good enough? 
+        query_normed, key_normed = query, key
+        x = F.scaled_dot_product_attention(
+            query_normed, key_normed, value 
+        ).transpose(1, 2).reshape(Bw, L, C)  # Bw, hc, L, hs -> # Bw, L, h
 
-        # compute attention map with scaled cosine attention
-        attn = (F.normalize(query, dim=-1) @ F.normalize(key, dim=-1).transpose(-2, -1))
-        # logit_scale = torch.clamp(self.logit_scale.reshape(1, self.num_heads, 1, 1), max=math.log(1. / 0.01)).exp()
-        # attn = attn * logit_scale
-
-        if mask is not None:
-            # Apply mask if utilized
-            num_win: int = mask.shape[0]
-            attn = attn.view(Bw // num_win, num_win, self.num_heads, L, L)
-            attn = attn + mask.unsqueeze(1).unsqueeze(0)
-            attn = attn.view(-1, self.num_heads, L, L)
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        x = (attn @ value).transpose(1, 2).reshape(Bw, L, -1)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
-
-
-class WindowMultiHeadAttention(MegatronModule):
-    r"""This class implements window-based Multi-Head-Attention with log-spaced continuous position bias.
-
-    Args:
-        dim (int): Number of input features
-        window_size (int): Window size
-        num_heads (int): Number of attention heads
-        drop_attn (float): Dropout rate of attention map
-        drop_proj (float): Dropout rate after projection
-        meta_hidden_dim (int): Number of hidden features in the two layer MLP meta network
-        sequential_attn (bool): If true sequential self-attention is performed
-    """
-
-    def __init__(
-        self,
-        dim: int,
-        num_heads: int,
-        window_size: Tuple[int, int],
-        drop_attn: float = 0.0,
-        drop_proj: float = 0.0,
-        meta_hidden_dim: int = 384,  # FIXME what's the optimal value?
-        sequential_attn: bool = False,
-    ) -> None:
-        super(WindowMultiHeadAttention, self).__init__()
-        assert dim % num_heads == 0, \
-            "The number of input features (in_features) are not divisible by the number of heads (num_heads)."
-        self.in_features: int = dim
-        self.window_size: Tuple[int, int] = window_size
-        self.num_heads: int = num_heads
-        self.sequential_attn: bool = sequential_attn
-
-        self.qkv = nn.Linear(in_features=dim, out_features=dim * 3, bias=True)
-        self.attn_drop = nn.Dropout(drop_attn)
-        self.proj = nn.Linear(in_features=dim, out_features=dim, bias=True)
-        self.proj_drop = nn.Dropout(drop_proj)
-        # meta network for positional encodings
-        self.meta_mlp = Mlp(
-            2,  # x, y
-            hidden_features=meta_hidden_dim,
-            out_features=num_heads,
-            act_layer=nn.ReLU,
-            drop=(0.125, 0.)  # FIXME should there be stochasticity, appears to 'overfit' without?
-        )
-        # NOTE old checkpoints used inverse of logit_scale ('tau') following the paper, see conversion fn
-        self.logit_scale = nn.Parameter(torch.log(10 * torch.ones(num_heads)))
-        self._make_pair_wise_relative_positions()
-
-    def _make_pair_wise_relative_positions(self) -> None:
-        """Method initializes the pair-wise relative positions to compute the positional biases."""
-        device = self.logit_scale.device
-        coordinates = torch.stack(torch.meshgrid([
-            torch.arange(self.window_size[0], device=device),
-            torch.arange(self.window_size[1], device=device)]), dim=0).flatten(1)
-        relative_coordinates = coordinates[:, :, None] - coordinates[:, None, :]
-        relative_coordinates = relative_coordinates.permute(1, 2, 0).reshape(-1, 2).float()
-        relative_coordinates_log = torch.sign(relative_coordinates) * torch.log(
-            1.0 + relative_coordinates.abs())
-        self.register_buffer("relative_coordinates_log", relative_coordinates_log, persistent=False)
-
-    def update_input_size(self, new_window_size: int, **kwargs: Any) -> None:
-        """Method updates the window size and so the pair-wise relative positions
-
-        Args:
-            new_window_size (int): New window size
-            kwargs (Any): Unused
-        """
-        # Set new window size and new pair-wise relative positions
-        self.window_size: int = new_window_size
-        self._make_pair_wise_relative_positions()
-
-    def _relative_positional_encodings(self) -> torch.Tensor:
-        """Method computes the relative positional encodings
-
-        Returns:
-            relative_position_bias (torch.Tensor): Relative positional encodings
-            (1, number of heads, window size ** 2, window size ** 2)
-        """
-        window_area = self.window_size[0] * self.window_size[1]
-        relative_position_bias = self.meta_mlp(self.relative_coordinates_log)
-        relative_position_bias = relative_position_bias.transpose(1, 0).reshape(
-            self.num_heads, window_area, window_area
-        )
-        relative_position_bias = relative_position_bias.unsqueeze(0)
-        return relative_position_bias
-
-    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """ Forward pass.
-        Args:
-            x (torch.Tensor): Input tensor of the shape (B * windows, N, C)
-            mask (Optional[torch.Tensor]): Attention mask for the shift case
-
-        Returns:
-            Output tensor of the shape [B * windows, N, C]
-        """
-        Bw, L, C = x.shape
-
-        qkv = self.qkv(x).view(Bw, L, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        query, key, value = qkv.unbind(0)
-
-        # compute attention map with scaled cosine attention
-        attn = (F.normalize(query, dim=-1) @ F.normalize(key, dim=-1).transpose(-2, -1))
-        logit_scale = torch.clamp(self.logit_scale.reshape(1, self.num_heads, 1, 1), max=math.log(1. / 0.01)).exp()
-        attn = attn * logit_scale
-        attn = attn + self._relative_positional_encodings()
-
-        if mask is not None:
-            # Apply mask if utilized
-            num_win: int = mask.shape[0]
-            attn = attn.view(Bw // num_win, num_win, self.num_heads, L, L)
-            attn = attn + mask.unsqueeze(1).unsqueeze(0)
-            attn = attn.view(-1, self.num_heads, L, L)
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        x = (attn @ value).transpose(1, 2).reshape(Bw, L, -1)
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
@@ -416,12 +242,13 @@ class SwinTransformerV2CrBlock(MegatronModule):
         self.feat_size: Tuple[int, int] = feat_size
         self.target_shift_size: Tuple[int, int] = to_2tuple(shift_size)
         self.window_size, self.shift_size = self._calc_window_shift(to_2tuple(window_size))
+        assert self.window_size == window_size, "likely undesired side-effect"
+        assert self.shift_size == shift_size, "likely undesired side-effect"
         self.window_area = self.window_size[0] * self.window_size[1]
         self.init_values: Optional[float] = init_values
-        window_attn_block = WindowMultiHeadAttention if rel_pos else WindowMultiHeadAttentionNoPos
 
         # attn branch
-        self.attn = window_attn_block(
+        self.attn = WindowMultiHeadAttentionNoPos(
             dim=dim,
             num_heads=num_heads,
             window_size=self.window_size,
@@ -430,9 +257,6 @@ class SwinTransformerV2CrBlock(MegatronModule):
             sequential_attn=sequential_attn,
         )
         self.norm1 = norm_layer(dim)
-        self.drop_path1 = DropPath(drop_prob=drop_path) if drop_path > 0.0 else nn.Identity()
-
-        # mlp branch
         self.mlp = Mlp(
             in_features=dim,
             hidden_features=int(dim * mlp_ratio),
@@ -440,43 +264,14 @@ class SwinTransformerV2CrBlock(MegatronModule):
             out_features=dim,
         )
         self.norm2 = norm_layer(dim)
-        self.drop_path2 = DropPath(drop_prob=drop_path) if drop_path > 0.0 else nn.Identity()
-
-        # Extra main branch norm layer mentioned for Huge/Giant models in V2 paper.
-        # Also being used as final network norm and optional stage ending norm while still in a C-last format.
-        # Dropped for ERA5
-        self.norm3 = nn.Identity()
-
-        self._make_attention_mask()
         self.init_weights()
 
     def _calc_window_shift(self, target_window_size):
+        ## window_size = window_size if window_size < input resolution
         window_size = [f if f <= w else w for f, w in zip(self.feat_size, target_window_size)]
+        ## shift_size = target_shift_size if window_size <= input resolution otherwise 0
         shift_size = [0 if f <= w else s for f, w, s in zip(self.feat_size, window_size, self.target_shift_size)]
         return tuple(window_size), tuple(shift_size)
-
-    def _make_attention_mask(self) -> None:
-        """Method generates the attention mask used in shift case."""
-        # Make masks for shift case
-        
-        if any(self.shift_size):
-            # calculate attention mask for SW-MSA
-            H, W = self.feat_size
-            img_mask = torch.zeros((1, H, W, 1))  # 1 H W 1
-            cnt = 0
-            for h in (
-                    slice(0, -self.window_size[0]),
-                    slice(-self.shift_size[0], None)):
-                img_mask[:, h, :, :] = cnt
-                cnt += 1
-            mask_windows = window_partition(img_mask, self.window_size)  # num_windows, window_size, window_size, 1
-            mask_windows = mask_windows.view(-1, self.window_area) # num_windows, window_size*window_size
-            attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
-            attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
-        else:
-            attn_mask = None
-        
-        self.register_buffer("attn_mask", attn_mask, persistent=False)
 
     def init_weights(self):
         # extra, module specific weight init
@@ -484,120 +279,34 @@ class SwinTransformerV2CrBlock(MegatronModule):
             nn.init.constant_(self.norm1.weight, self.init_values)
             nn.init.constant_(self.norm2.weight, self.init_values)
 
-    def update_input_size(self, new_window_size: Tuple[int, int], new_feat_size: Tuple[int, int]) -> None:
-        """Method updates the image resolution to be processed and window size and so the pair-wise relative positions.
-
-        Args:
-            new_window_size (int): New window size
-            new_feat_size (Tuple[int, int]): New input resolution
-        """
-        # Update input resolution
-        self.feat_size: Tuple[int, int] = new_feat_size
-        self.window_size, self.shift_size = self._calc_window_shift(to_2tuple(new_window_size))
-        self.window_area = self.window_size[0] * self.window_size[1]
-        self.attn.update_input_size(new_window_size=self.window_size)
-        self._make_attention_mask()
-
     def _shifted_window_attn(self, x):
-        B, H, W, C = x.shape
-
-        # cyclic shift
+        B, h, w, d = x.shape
+        
+        # cyclic shift (shift once every layer without reversing) [B, h, w, d]
         sh, sw = self.shift_size
+        assert isinstance(sh, int), isinstance(sw, int)
         do_shift: bool = any(self.shift_size)
         if do_shift:
-            # FIXME PyTorch XLA needs cat impl, roll not lowered
-            # x = torch.cat([x[:, sh:], x[:, :sh]], dim=1)
-            # x = torch.cat([x[:, :, sw:], x[:, :, :sw]], dim=2)
-            
-            x = torch.roll(x, shifts=(-sh, -sw), dims=(1, 2))
-        
+            x = torch.roll(x, shifts=(-sh, -sw), dims=(1, 2))  # [B, h, w, d]
+        else:
+            print("Shifting is not happening. There may be a logic issue")
 
-        # partition windows
-        x_windows = window_partition(x, self.window_size)  # num_windows * B, window_size, window_size, C
-        x_windows = x_windows.view(-1, self.window_size[0] * self.window_size[1], C)
+        # partition windows:  [Bw, w_h*w_w, d]
+        ## TODO: move window parition in side do_shift?
+        x_windows = window_partition(x, self.window_size)  # Bw, w_h, w_w, d
+        x_windows = x_windows.view(-1, self.window_size[0] * self.window_size[1], d)
 
         # W-MSA/SW-MSA
-        attn_windows = self.attn(x_windows, mask=self.attn_mask)  # num_windows * B, window_size * window_size, C
+        attn_windows = self.attn(x_windows)  # [Bw, L, d]
 
-        # merge windows
-        attn_windows = attn_windows.view(-1, self.window_size[0], self.window_size[1], C)
-        x = window_reverse(attn_windows, self.window_size, self.feat_size)  # B H' W' C
-
-        # reverse cyclic shift
-        if do_shift:
-            # FIXME PyTorch XLA needs cat impl, roll not lowered
-            # x = torch.cat([x[:, -sh:], x[:, :-sh]], dim=1)
-            # x = torch.cat([x[:, :, -sw:], x[:, :, :-sw]], dim=2)
-            x = torch.roll(x, shifts=(sh, sw), dims=(1, 2))
-
+        # merge windows: [B, h, w, d]
+        attn_windows = attn_windows.view(-1, self.window_size[0], self.window_size[1], d)
+        x = window_partition_reverse(attn_windows, self.window_size, self.feat_size)
         return x
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass.
-
-        Args:
-            x (torch.Tensor): Input tensor of the shape [B, C, H, W]
-
-        Returns:
-            output (torch.Tensor): Output tensor of the shape [B, C, H, W]
-        """
-        # post-norm branches (op -> norm -> drop)
-        x = x + self.drop_path1(self.norm1(self._shifted_window_attn(x)))
-
-        B, H, W, C = x.shape
-        x = x.reshape(B, -1, C)
-        x = x + self.drop_path2(self.norm2(self.mlp(x)))
-        x = self.norm3(x)  # main-branch norm enabled for some blocks / stages (every 6 for Huge/Giant)
-        x = x.reshape(B, H, W, C)
-        return x
-
-
-class PatchMerging(MegatronModule):
-    """ This class implements the patch merging as a strided convolution with a normalization before.
-    Args:
-        dim (int): Number of input channels
-        norm_layer (Type[MegatronModule]): Type of normalization layer to be utilized.
-    """
-
-    def __init__(self, dim: int, norm_layer: Type[MegatronModule] = nn.LayerNorm) -> None:
-        super(PatchMerging, self).__init__()
-        self.norm = norm_layer(4 * dim)
-        self.reduction = nn.Linear(in_features=4 * dim, out_features=2 * dim, bias=False)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """ Forward pass.
-        Args:
-            x (torch.Tensor): Input tensor of the shape [B, C, H, W]
-        Returns:
-            output (torch.Tensor): Output tensor of the shape [B, 2 * C, H // 2, W // 2]
-        """
-        B, H, W, C = x.shape
-        x = x.reshape(B, H // 2, 2, W // 2, 2, C).permute(0, 1, 3, 4, 2, 5).flatten(3)
-        x = self.norm(x)
-        x = self.reduction(x)
-        return x
-
-
-class PatchEmbed(MegatronModule):
-    """ 2D Image to Patch Embedding """
-    def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, norm_layer=None):
-        super().__init__()
-        img_size = to_2tuple(img_size)
-        patch_size = to_2tuple(patch_size)
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.grid_size = (img_size[0] // patch_size[0], img_size[1] // patch_size[1])
-        self.num_patches = self.grid_size[0] * self.grid_size[1]
-
-        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
-        self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
-
-    def forward(self, x):
-        B, C, H, W = x.shape
-        _assert(H == self.img_size[0], f"Input image height ({H}) doesn't match model ({self.img_size[0]}).")
-        _assert(W == self.img_size[1], f"Input image width ({W}) doesn't match model ({self.img_size[1]}).")
-        x = self.proj(x)
-        x = self.norm(x.permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+        x = x + self.norm1(self._shifted_window_attn(x))  # [B, h, w, d]
+        x = x + self.norm2(self.mlp(x))  # [B, h, w, d]
         return x
 
 
@@ -646,25 +355,22 @@ class SwinTransformerV2CrStage(MegatronModule):
         self.feat_size: Tuple[int, int] = (feat_size[0] // 2, feat_size[1] // 2) if downscale else feat_size
         self.grad_checkpointing = grad_checkpointing
 
-        if downscale:
-            self.downsample = PatchMerging(embed_dim, norm_layer=norm_layer)
-            embed_dim = embed_dim * 2
-        else:
-            self.downsample = nn.Identity()
-
+        ## TODO: how to remove this cleanly? 
         def _extra_norm(index):
             i = index + 1
             if extra_norm_period and i % extra_norm_period == 0:
                 return True
             return i == depth if extra_norm_stage else False
 
+        # shift every layer instead of twice every other layer
+        shift_size = (window_size[0] // 2, window_size[1] // 2)
         self.blocks = nn.Sequential(*[
             SwinTransformerV2CrBlock(
                 dim=embed_dim,
                 num_heads=num_heads,
                 feat_size=self.feat_size,
                 window_size=window_size,
-                shift_size=tuple([0 if ((index % 2) == 0) else w // 2 for w in window_size]),
+                shift_size=shift_size,
                 mlp_ratio=mlp_ratio,
                 init_values=init_values,
                 proj_drop=proj_drop,
@@ -678,19 +384,6 @@ class SwinTransformerV2CrStage(MegatronModule):
             for index in range(depth)]
         )
 
-    def update_input_size(self, new_window_size: int, new_feat_size: Tuple[int, int]) -> None:
-        """Method updates the resolution to utilize and the window size and so the pair-wise relative positions.
-
-        Args:
-            new_window_size (int): New window size
-            new_feat_size (Tuple[int, int]): New input resolution
-        """
-        self.feat_size: Tuple[int, int] = (
-            (new_feat_size[0] // 2, new_feat_size[1] // 2) if self.downscale else new_feat_size
-        )
-        for block in self.blocks:
-            block.update_input_size(new_window_size=new_window_size, new_feat_size=self.feat_size)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.
         Args:
@@ -698,15 +391,12 @@ class SwinTransformerV2CrStage(MegatronModule):
         Returns:
             output (torch.Tensor): Output tensor of the shape [B, 2 * C, H // 2, W // 2]
         """
-        x = bchw_to_bhwc(x)
-        x = self.downsample(x)
         for block in self.blocks:
             # Perform checkpointing if utilized
             if self.grad_checkpointing and not torch.jit.is_scripting():
                 x = checkpoint(block, x, use_reentrant=False)
             else:
                 x = block(x)
-        x = bhwc_to_bchw(x)
         return x
 
 class SwinTransformerV2Cr(MegatronModule):
@@ -737,7 +427,7 @@ class SwinTransformerV2Cr(MegatronModule):
 
     def __init__(
         self,
-        config=None,  # TransformerConfig?
+        config=None,  # TransformerConfig? 
         img_size: Tuple[int, int] = (224, 224),
         patch_size: int = 4,
         window_size: Optional[int] = None,
@@ -753,7 +443,7 @@ class SwinTransformerV2Cr(MegatronModule):
         proj_drop_rate: float = 0.0,
         attn_drop_rate: float = 0.0,
         drop_path_rate: float = 0.0,
-        norm_layer: Type[MegatronModule] = nn.LayerNorm,
+        norm_layer: Type[nn.Module] = nn.LayerNorm,
         extra_norm_period: int = 0,
         extra_norm_stage: bool = False,
         sequential_attn: bool = False,
@@ -765,44 +455,53 @@ class SwinTransformerV2Cr(MegatronModule):
         residual:  bool = False,
         **kwargs: Any
     ) -> None:
-        super(SwinTransformerV2Cr, self).__init__(config=config)  # add config to the model.
-        # super(SwinTransformerV2Cr, self).__init__()
+        super(SwinTransformerV2Cr, self).__init__(config=config)  # initiate Megatron config
         img_size = to_2tuple(img_size)
-        window_size = tuple([
-            s // img_window_ratio for s in img_size]) if window_size is None else to_2tuple(window_size)
+        if window_size is not None:
+            window_size = to_2tuple(window_size)
+        else:
+            window_size = tuple([s // img_window_ratio for s in img_size])
 
         self.patch_size: int = patch_size
         self.img_size: Tuple[int, int] = img_size
-        self.window_size: int = window_size
+        self.window_size: Tuple[int, int] = window_size
         self.num_features: int = int(embed_dim)
         self.out_chans: int = out_chans
-        self.feature_info = []
-        self.full_pos_embed = full_pos_embed
+        self.full_pos_embed: bool = full_pos_embed
         self.checkpoint_stages = checkpoint_stages
         self.residual = residual
         self.depth = len(depths)
-
-        self.patch_embed = PatchEmbed(
-            img_size=img_size,
-            patch_size=patch_size,
-            in_chans=in_chans,
-            embed_dim=embed_dim,
-            norm_layer=norm_layer,
+        self.patch_grid_size: Tuple[int, int] = (
+            img_size[0]//patch_size, img_size[1]//patch_size
         )
-        patch_grid_size: Tuple[int, int] = self.patch_embed.grid_size
+        self.window_area = self.window_size[0] * self.window_size[1]
+
+        print(f"window_size: {self.window_size}", flush=True)
+        print(f"img_size: {img_size}", flush=True)
+        print(f"sequence length per window: {self.window_area}")
+        print("total sequence length per MBS: {}".format(
+            self.patch_grid_size[0] * self.patch_grid_size[1]
+        ))
+        assert patch_size * window_size[0] <= img_size[0], \
+            "window height cannot be bigger than the image height"
+        assert patch_size * window_size[1] <= img_size[1], \
+            "window width cannot be bigger than the image width"
+
+        ## Patchify
+        self.patchify_proj = nn.Linear(in_chans * self.patch_size**2, embed_dim)
+        self.post_patchify_norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
+        assert norm_layer is not None
 
         dpr = [x.tolist() for x in torch.linspace(0, drop_path_rate, sum(depths)).split(depths)]
         stages = []
-        in_dim = embed_dim
-        in_scale = 1
         for stage_idx, (depth, num_heads) in enumerate(zip(depths, num_heads)):
             stages += [SwinTransformerV2CrStage(
-                embed_dim=in_dim,
+                embed_dim=embed_dim,
                 depth=depth,
                 downscale=False,
                 feat_size=(
-                    patch_grid_size[0] // in_scale,
-                    patch_grid_size[1] // in_scale
+                    self.patch_grid_size[0],
+                    self.patch_grid_size[1]
                 ),
                 num_heads=num_heads,
                 window_size=window_size,
@@ -818,126 +517,78 @@ class SwinTransformerV2Cr(MegatronModule):
                 rel_pos=rel_pos,
                 grad_checkpointing=self.checkpoint_stages,
             )]
-            self.feature_info += [dict(num_chs=in_dim, reduction=4 * in_scale, module=f'stages.{stage_idx}')]
 
         self.stages = nn.Sequential(*stages)
-        self.head = nn.Linear(embed_dim, self.out_chans*self.patch_size*self.patch_size, bias=False)
+        self.head = nn.Linear(embed_dim, self.out_chans * self.patch_size**2, bias=False)
 
         if self.full_pos_embed:
-            self.pos_embed = nn.Parameter(torch.randn(1, embed_dim, patch_grid_size[0], patch_grid_size[1]) * .02)
+            ## TODO: Replace with ROPE
+            self.pos_embed = nn.Parameter(torch.randn(1, *self.patch_grid_size, embed_dim) * .02)
 
         # # current weight init skips custom init and uses pytorch layer defaults, seems to work well
         # # FIXME more experiments needed
         # if weight_init != 'skip':
         #     named_apply(init_weights, self)
 
-    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.patch_embed(x)
+    def set_input_tensor(self, input_tensor):
+        """place holder for megatron.model.transformer.set_input_tensor()"""
+        pass
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        ## Preprocess (patchification)
+        # h: num patches row-wise
+        # c: num patches col-wise
+        x = einops.rearrange(x, 
+            "B c (h p1) (w p2) -> B h w p1 p2 c",
+            p1=self.patch_size,
+            p2=self.patch_size
+        )
+
+        x = x.flatten(start_dim=-3)  ## [B, h, w, p*p*c]
+        x = self.patchify_proj(x)  ## [B, h, w, d]
+        x = self.post_patchify_norm(x)  ## [B, h, w, d]
+
+        ## Backbone
         if self.full_pos_embed:
             x = x + self.pos_embed
         x = self.stages(x)
-        return x
-    
-    def set_input_tensor(self, input_tensor):
-        """See megatron.model.transformer.set_input_tensor()"""
-        pass
 
-    def forward_head(self, x: torch.Tensor) -> torch.Tensor:
-        B, _, h, w = x.shape
-        x = bchw_to_bhwc(x)
-        x = self.head(x)
+        ## Head
+        x = self.head(x)  # [B, h, w, d]
 
-        x = x.reshape(shape=(B, h, w, self.patch_size, self.patch_size, self.out_chans))
-        x = torch.einsum("nhwpqc->nchpwq", x)
-        x = x.reshape(shape=(B, self.out_chans, self.img_size[0], self.img_size[1]))
+        ## TODO: post-processing: upsampling with linear + pixel_shuffle + conv x n
+        # print(f"torch.cuda.memory_summary(): {torch.cuda.memory_summary()}")
+        x = einops.rearrange(x, 
+            "B h w (p1 p2 c) -> B c (h p1) (w p2)",
+            p1=self.patch_size,
+            p2=self.patch_size,
+            c=self.out_chans
+        )
         return x
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.residual:
-            skip = x
-        else:
-            skip = torch.zeros_like(x)
-        x = self.forward_features(x)
-        x = self.forward_head(x)
-
-        x = x + skip[:,:self.out_chans,:,:]
-        return x
-
-    def update_input_size(
-            self,
-            new_img_size: Optional[Tuple[int, int]] = None,
-            new_window_size: Optional[int] = None,
-            img_window_ratio: int = 32,
-    ) -> None:
-        """Method updates the image resolution to be processed and window size and so the pair-wise relative positions.
-
-        Args:
-            new_window_size (Optional[int]): New window size, if None based on new_img_size // window_div
-            new_img_size (Optional[Tuple[int, int]]): New input resolution, if None current resolution is used
-            img_window_ratio (int): divisor for calculating window size from image size
-        """
-        # Check parameters
-        if new_img_size is None:
-            new_img_size = self.img_size
-        else:
-            new_img_size = to_2tuple(new_img_size)
-        if new_window_size is None:
-            new_window_size = tuple([s // img_window_ratio for s in new_img_size])
-        # Compute new patch resolution & update resolution of each stage
-        new_patch_grid_size = (new_img_size[0] // self.patch_size, new_img_size[1] // self.patch_size)
-        for index, stage in enumerate(self.stages):
-            stage_scale = 2 ** max(index - 1, 0)
-            stage.update_input_size(
-                new_window_size=new_window_size,
-                new_img_size=(new_patch_grid_size[0] // stage_scale, new_patch_grid_size[1] // stage_scale),
-            )
-
-    # @torch.jit.ignore
-    # def group_matcher(self, coarse=False):
-    #     return dict(
-    #         stem=r'^patch_embed',  # stem and embed
-    #         blocks=r'^stages\.(\d+)' if coarse else [
-    #             (r'^stages\.(\d+).downsample', (0,)),
-    #             (r'^stages\.(\d+)\.\w+\.(\d+)', None),
-    #         ]
-    #     )
-
-    # @torch.jit.ignore
-    # def set_grad_checkpointing(self, enable=True):
-    #     for s in self.stages:
-    #         s.grad_checkpointing = enable
-
-    # @torch.jit.ignore()
-    # def get_classifier(self) -> MegatronModule:
-    #     """Method returns the classification head of the model.
-    #     Returns:
-    #         head (MegatronModule): Current classification head
-    #     """
-    #     return self.head.fc
-
-    # def reset_classifier(self, num_classes: int, global_pool: Optional[str] = None) -> None:
-    #     """Method results the classification head
-
-    #     Args:
-    #         num_classes (int): Number of classes to be predicted
-    #         global_pool (str): Unused
-    #     """
-    #     self.num_classes = num_classes
-        # self.head.reset(num_classes, global_pool)
-
-
-# def init_weights(module: MegatronModule, name: str = ''):
-#     # FIXME WIP determining if there's a better weight init
-#     if isinstance(module, nn.Linear):
-#         if 'qkv' in name:
-#             # treat the weights of Q, K, V separately
-#             val = math.sqrt(6. / float(module.weight.shape[0] // 3 + module.weight.shape[1]))
-#             nn.init.uniform_(module.weight, -val, val)
-#         elif 'head' in name:
-#             nn.init.zeros_(module.weight)
-#         else:
-#             nn.init.xavier_uniform_(module.weight)
-#         if module.bias is not None:
-#             nn.init.zeros_(module.bias)
-#     elif hasattr(module, 'init_weights'):
-#         module.init_weights()
+if __name__ == "__main__":
+    DEVICE = "xpu"
+    # DEVICE = "cpu"
+    IMG_SIZE=32
+    DTYPE = torch.float32
+    model = SwinTransformerV2Cr(
+        img_size=[IMG_SIZE, IMG_SIZE],
+        patch_size=4,
+        depths=[1],
+        num_heads=(1,),
+        in_chans=3,
+        out_chans=3,
+        embed_dim=8,
+        img_window_ratio=8,  # Modify number of windows
+        drop_path_rate=0,  # Stochastic Depth
+        full_pos_embed=True,  # TODO: Replace with ROPE?
+        rel_pos=False,  # TODO: REMOVE from args?
+        mlp_ratio=1,  # Fixed projection dimension
+        checkpoint_stages=False,  # TODO: Enable activation checkpointing
+        residual=False,  # TODO: What is residual doing?
+    ).to(DEVICE)
+    B, C, H, W = [1, 3, IMG_SIZE, IMG_SIZE]
+    x = torch.randn(B, C, H, W, device=DEVICE, dtype=DTYPE)
+    # print(f"model: {model}", flush=True)
+    # print(f"x.shape: {x.shape}", flush=True)
+    model(x)

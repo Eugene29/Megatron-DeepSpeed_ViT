@@ -54,6 +54,11 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = deepspeed.add_config_arguments(parser)
     parser.add_argument('--use-MICS', action='store_true', help='enable MICS')
     parser.add_argument('--use-toy-data', action='store_true', help='use toy dataset')
+    parser.add_argument('--use-swin', action='store_true', help='use swin model')
+    parser.add_argument('--swin-window2image-ratio', type=int, default=4, \
+                        help='swin model window to image ratio')
+    parser.add_argument('--swin-window-size', type=int, default=4, \
+                        help='swin model window size (in patches)')
 
     # Parse.
     if ignore_unknown_args:

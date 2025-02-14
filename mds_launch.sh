@@ -673,6 +673,7 @@ echo "PYTHONPATH: $PYTHONPATH"
 # Training and validation paths should each point to a folder where each
 # sub-folder contains a collection of images in jpg or png format
 # e.g. If using imagenet, one train image might be, train_data/n01688243/n01688243_11301.JPEG
+
 CLASSIFIER_ARGS="
      $no_pipeline_parallel \
      --zero-stage ${ZERO} \
@@ -713,18 +714,35 @@ CLASSIFIER_ARGS="
      # --fp16 \
 ## TODO: does --no-async-tensor-model-parallel-allreduce \ make things faster? 
 
+# MODEL ARGUMENTS
 if [[ $FA -eq 1 ]]; then
-     CLASSIFIER_ARGS="$FA_VERSION $CLASSIFIER_ARGS"
+    CLASSIFIER_ARGS="$FA_VERSION $CLASSIFIER_ARGS"
 fi
 if [[ $NUM_CHANNELS ]]; then
-     CLASSIFIER_ARGS="--num-channels $NUM_CHANNELS $CLASSIFIER_ARGS"
+    CLASSIFIER_ARGS="--num-channels $NUM_CHANNELS $CLASSIFIER_ARGS"
 fi
 if [[ $TPSP -eq 1 ]]; then
-     export CUDA_DEVICE_MAX_CONNECTIONS=1
-     CLASSIFIER_ARGS="--sequence-parallel $CLASSIFIER_ARGS"
+    export CUDA_DEVICE_MAX_CONNECTIONS=1
+    CLASSIFIER_ARGS="--sequence-parallel $CLASSIFIER_ARGS"
 fi
 if [[ $MICS_SHARD_SIZE ]]; then
-     CLASSIFIER_ARGS="--use-MICS $CLASSIFIER_ARGS"
+    CLASSIFIER_ARGS="--use-MICS $CLASSIFIER_ARGS"
+fi
+if [[ $DATA == "TOY" ]]; then
+    CLASSIFIER_ARGS="--use-toy-data $CLASSIFIER_ARGS"
+fi
+if [[ $SWIN_WIN2IMG_RATIO && $SWIN_WINDOW_SIZE ]]; then
+    echo "Please either define window to image ratio or window size"
+    exit 1
+elif [[ $USE_SWIN -eq 1 ]]; then
+    CLASSIFIER_ARGS="\
+    --use-swin \
+    --swin-window2image-ratio ${SWIN_WIN2IMG_RATIO:-16} \
+    --swin-window-size ${SWIN_WINDOW_SIZE} \
+    $CLASSIFIER_ARGS"
+    pretrain_script="pretrain_swin"
+else
+    pretrain_script="pretrain_vision_classify"
 fi
 
 DATA_ARGS="
@@ -769,7 +787,7 @@ if [[ $MACHINE == "aurora" ]]; then
      run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
           --cpu-bind depth -d 16 \
           $nsys python \
-          ${WORKING_DIR}/pretrain_vision_classify_ezpz.py \
+          ${WORKING_DIR}/${pretrain_script}_ezpz.py \
           ${CLASSIFIER_ARGS} \
           ${DATA_ARGS} \
           ${OUTPUT_ARGS} \
@@ -781,7 +799,7 @@ elif [[ $MACHINE == "polaris" ]]; then
           # --hostfile ${PBS_NODEFILE} \
      run_cmd="mpiexec --verbose --envall -n ${NHOSTS} -ppn 1 --cpu-bind depth -d ${NGPUS} \
           python3 -m torch.distributed.run --rdzv_backend=c10d --rdzv_endpoint="$RDZV_HOST:$RDZV_PORT" --nnodes=${NHOSTS} --nproc_per_node=${NGPU_PER_HOST} \
-          ${WORKING_DIR}/pretrain_vision_classify.py \
+          ${WORKING_DIR}/${pretrain_script}.py \
           ${CLASSIFIER_ARGS} \
           ${DATA_ARGS} \
           ${OUTPUT_ARGS} \

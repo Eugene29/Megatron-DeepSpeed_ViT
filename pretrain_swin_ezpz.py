@@ -47,6 +47,7 @@ def model_provider(pre_process=True, post_process=True):
                    enabled=args.zero_stage == 3, 
                    mpu=mpu):
         ## TODO: connect model to reflect args?
+        mlp_ratio = args.ffn_hidden_size / args.hidden_size
         model = SwinTransformerV2Cr(
             config=config,
             img_size=[args.img_h, args.img_w],
@@ -54,32 +55,17 @@ def model_provider(pre_process=True, post_process=True):
             depths=[args.num_layers],
             num_heads=(args.num_attention_heads,),
             in_chans=args.num_channels,
-            out_chans=args.num_channels, ## TODO: MAKE LABEL INPUT SIZE TENSOR AND MAKE THE LOSS MSE LOSS.
+            out_chans=args.num_channels,
             embed_dim=args.hidden_size,
-            img_window_ratio=4,  # Modify number of windows
+            img_window_ratio=args.swin_window2image_ratio,  # Modify number of windows
+            window_size=args.swin_window_size,
             drop_path_rate=0,  # Stochastic Depth
             full_pos_embed=True,  # TODO: Replace with ROPE?
-            rel_pos=False,  # TODO: REMOVE?
-            mlp_ratio=4,  # Fixed projection dimension
+            rel_pos=False,  # TODO: REMOVE from args?
+            mlp_ratio=mlp_ratio,  # Fixed projection dimension
             checkpoint_stages=False,  # TODO: Enable activation checkpointing
             residual=False,  # TODO: What is residual doing?
         )
-
-    # print(f"model(): {model}", flush=True)
-    # import torch
-    # B, C, H, W = 32, 3, 32, 32
-    # x = torch.randn(B, C, H, W)
-    # output = model(x)
-    # print(f"output: {output}", flush=True)
-    # model = SwinTransformer(img_size=(args.img_h, args.img_w,),
-    #                         in_chans=3,
-    #                         patch_size=args.patch_dim,
-    #                         embed_dim=embed_dim,
-    #                         depths=depths,
-    #                         num_heads=num_heads,
-    #                         window_size=window_size,
-    #                         drop_path_rate=drop_path_rate,
-    #                         output_avg=output_avg,)
     return model
 
 def get_batch(data_iterator):

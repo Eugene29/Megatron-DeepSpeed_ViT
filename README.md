@@ -45,4 +45,5 @@ PROF_FLOPS                  ## profile flop counts with detail through deepspeed
 ################################ Notes ################################
 1. Pass either GBS or MBS
 2. Pass either fp16 or bf16
+3. Without ZERO3, only fp16 can be used (for now).
 ```

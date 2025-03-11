@@ -8,7 +8,7 @@
 ```
 
 ## Environment
-Only base environment is needed for polaris cluster while for aurora, we employ sam's ezpz library. A suitable virtual environment (in flare file-system) is activated automatically on aurora. 
+Only base environment is needed for polaris cluster while for aurora, we employ sam's ezpz library on top of base environment. Thus, a suitable virtual environment (in flare file-system) is activated automatically on aurora. 
 
 ## Notes:
 Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll need to modify `SCRIPT_DIR`. Environment variables not in mult_mds can be found and configured in `mult_launch.sh`. 

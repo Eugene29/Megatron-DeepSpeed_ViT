@@ -1,6 +1,10 @@
-## Clone & Init Submodule:
+## Clone:
+If not already cloned,
 ```
   git clone --recursive https://github.com/Eugene29/Megatron-DeepSpeed_ViT.git  # Clone module & submodule
+```
+## Init Submodule
+```
   cd Megatron-DeepSpeed_ViT
   git submodule update --init --recursive  # Init & Update submodule
 ```

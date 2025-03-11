@@ -7,10 +7,7 @@
   git submodule update --init --recursive  # Init & Update submodule
 ```
 
-## Environment
-Only base environment is needed for polaris cluster while for aurora, we employ sam's ezpz library on top of base environment. Thus, a suitable virtual environment (in flare file-system) is activated automatically on aurora. 
-
-## Notes:
+## Main Script for Entry:
 Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll need to modify `SCRIPT_DIR`. Environment variables not in mult_mds can be found and configured in `mult_launch.sh`. 
 
 ## POSSIBLE ENV VARIABLES
@@ -47,3 +44,7 @@ PROF_FLOPS                  ## profile flop counts with detail through deepspeed
 2. Pass either fp16 or bf16
 3. Without ZERO3, only fp16 can be used (for now).
 ```
+
+## Environment
+Only base environment is needed for polaris cluster while for aurora, we employ sam's ezpz library on top of base environment. Thus, a suitable virtual environment (in flare file-system) is activated automatically on aurora. 
+

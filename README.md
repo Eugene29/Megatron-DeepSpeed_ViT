@@ -2,24 +2,23 @@
 
 ## Clone & Init Submodule:
 ```
-  git clone --recursive https://github.com/Eugene29/Megatron-DeepSpeed_ViT.git ## Clone module + submodule
+  git clone --recursive https://github.com/Eugene29/Megatron-DeepSpeed_ViT.git  # Clone module & submodule
   cd Megatron-DeepSpeed_ViT
-  git submodule update --init --recursive ## Init & Update submodule
+  git submodule update --init --recursive  # Init & Update submodule
 ```
 
 ## Environment
 Only base environment is needed for polaris cluster while for aurora, we employ sam's ezpz library. A suitable virtual environment (in flare file-system) is activated automatically on aurora. 
 
 ## Notes:
-Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll need to modify `SCRIPT_DIR`, which essentially is your working directory. 
-You can take a deeper look at other fixed ENV and MDS-related variables inside `mult_launch.sh`. 
+Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll need to modify `SCRIPT_DIR`. Environment variables not in mult_mds can be found and configured in `mult_launch.sh`. 
 
 ## POSSIBLE ENV VARIABLES
 ```
 USP_ulysses=1, SP=          ## Turn on USP's Ulysses. Separately set degree by SP=_
 USP_ring=1, SP=             ## Turn on USP's Ulysses. Separately set degree by SP=_
 USP_hybrid=(2,4)            ## TBD
-SIZE=int                    ## Number of GPU (ONLY WORKS ON 1-NODE)
+SIZE=int                    ## Restraint Number of GPU (ONLY WORKS ON 1-NODE)
 drop_last_batch_with_GBS=1  ## fixes the data order as long as GBS is matching.
 DATA={TOY, CIFAR}           ## Use Toy dataset
 factor=int                  ## Ratio of image_dim/patch_dim. Controls the Sequence Length.
@@ -37,7 +36,7 @@ VIT3D={0,1}                 ## Switch to 3DVIT. Must use Toy dataset (for now).
 VIT=string                  ## Size of VIT. Refer to mds_launch.sh for possible models
 TPSP={0,1}                  ## Upgrade from TP to TP-SP
 LOG_RESULTS={0,1}           ## log results (tflops, mem fpt, samples/sec) in a json file
-MICS_SHARD_SIZE             ## Size of your MICS partition group
+MICS_SHARD_SIZE             ## Size of your MICS partition group (Needs custom DeepSpeed with MICS fix)
 fp16                        ## enable fp16
 bf16                        ## use datatype bf16
 LOG_COMMS                   ## log/profile communications through deepspeed
@@ -46,6 +45,4 @@ PROF_FLOPS                  ## profile flop counts with detail through deepspeed
 ################################ Notes ################################
 1. Pass either GBS or MBS
 2. Pass either fp16 or bf16
-2. ZERO123 has different loss than ZERO=0, also observed in LLM. Whether convergence is impacted
-needs to be tested.
 ```

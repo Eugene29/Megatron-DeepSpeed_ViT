@@ -1,5 +1,3 @@
-## Welcome to ALCF ViT repo
-
 ## Clone & Init Submodule:
 ```
   git clone --recursive https://github.com/Eugene29/Megatron-DeepSpeed_ViT.git  # Clone module & submodule

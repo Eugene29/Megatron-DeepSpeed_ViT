@@ -8,7 +8,7 @@
 ```
 
 ## Main Script for Entry:
-Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll need to modify `SCRIPT_DIR`. Environment variables not in mult_mds can be found and configured in `mult_launch.sh`. 
+Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll need to modify `SCRIPT_DIR`. Environment variables not in `mult_mds_*.sh` can be found and configured in `mds_launch.sh`. 
 
 ## POSSIBLE ENV VARIABLES
 ```

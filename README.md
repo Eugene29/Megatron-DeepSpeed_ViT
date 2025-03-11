@@ -33,8 +33,8 @@ MBS=int                     ## micro batch size
 POS_ENCODING={0,1}          ## Use positioanl encoding instead of positional embedding
 WANDB_MODE=disabled         ## Disable WANDB
 GLOBAL_MEAN_POOLING=1       ## Use Global mean pooling instead of clf token
-USP_ulysses=1, SP=          ## Turn on USP's Ulysses. Separately set degree by SP=_
-USP_ring=1, SP=             ## Turn on USP's Ulysses. Separately set degree by SP=_
+USP_ulysses=1, SP=          ## Turn on USP's Ulysses. Separately set SP degree
+USP_ring=1, SP=             ## Turn on USP's Ring Attention. Separately set SP degree
 USP_hybrid=(2,4)            ## TBD
 SIZE=int                    ## Restraint Number of GPU (ONLY WORKS ON 1-NODE)
 drop_last_batch_with_GBS=1  ## fixes the data order as long as GBS is matching.

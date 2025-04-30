@@ -93,6 +93,18 @@ def calc_params_l2_norm(model):
     return norm_2.item() ** 0.5
 
 
+from torch.profiler import record_function
+def trace_func(func):
+    def wrapper(*args, **kwargs):
+        try:
+            func_name = func.__func__.__qualname__
+        except:
+            func_name = func.__qualname__
+        with record_function(func_name):
+            return func(*args, **kwargs)
+    return wrapper
+
+@trace_func
 def average_losses_across_data_parallel_group(losses):
     """Reduce a tensor of losses across all GPUs."""
     averaged_losses = torch.cat(

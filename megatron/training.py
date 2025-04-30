@@ -61,6 +61,7 @@ from megatron.model.transformer import ParallelTransformerLayer
 
 from deepspeed import comm as dist
 from megatron.vit_utils import get_gpu_memory, get_xpu_memory
+from megatron.utils import trace_func
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
@@ -1354,7 +1355,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             else:
                 packed = ""
 
-            if rank == 0:
+            if rank < 1:
                 p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
 
         print_rank_0(f"PROFILING...")
@@ -1363,12 +1364,15 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         elif torch.xpu.is_available():
             ProfilerActivityGPU = getattr(ProfilerActivity, "XPU")
             
+            # schedule=torch.profiler.schedule(wait=6, warmup=2, active=2),
         p = torch.profiler.profile(
             schedule=torch.profiler.schedule(wait=6, warmup=2, active=2),
+            # activities=[ProfilerActivity.CPU],
+            # activities=[ProfilerActivityGPU],
             activities=[ProfilerActivity.CPU, ProfilerActivityGPU],
             # on_trace_ready=torch.profiler.tensorboard_trace_handler("/home/eku/aevard/polaris-trial/jobscripts/log/"),
-            # record_shapes=True,
-            # with_stack=True,
+            record_shapes=True,
+            with_stack=True,
             on_trace_ready=trace_handler,
         )
         p.start()
@@ -1820,7 +1824,7 @@ def build_train_valid_test_datasets(build_train_valid_test_datasets_provider):
     # Build the datasets.
     return build_train_valid_test_datasets_provider(train_val_test_num_samples)
 
-
+@trace_func
 def build_train_valid_test_data_loaders(
         build_train_valid_test_datasets_provider):
     """Build pretraining data loaders."""

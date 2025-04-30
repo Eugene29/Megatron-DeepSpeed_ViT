@@ -1,10 +1,11 @@
 # Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain VIT"""
+# import torch.distributed as dist
 from mpi4py import MPI
-import torch.distributed as dist
 comm = MPI.COMM_WORLD
 comm.Barrier()
+import deepspeed.comm as dist
 
 import torch
 import torch.nn.functional as F
@@ -22,6 +23,11 @@ from megatron.arguments import core_transformer_config_from_args
 import deepspeed
 import os
 # from deepspeed.runtime.utils import see_memory_usage
+
+# import sys
+# sys.path
+# print(f"sys.path: {sys.path}", flush=True)
+# exit()
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
@@ -151,68 +157,82 @@ def get_batch(data_iterator):
 
     return images, labels
 
+# def loss_func(labels, output_tensor):
+#     sp_rank = mpu.get_sequence_parallel_rank()
+#     sp_src_rank = mpu.get_sequence_parallel_src_rank()
+#     # sp_world_size = mpu.get_sequence_parallel_world_size()
+#     sp_group = mpu.get_sequence_parallel_group()
+
+#     logits = output_tensor.contiguous().float()
+#     if sp_rank == 0:
+#         logits = output_tensor.contiguous().float()
+#     else:
+#         logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
+
+#     outputs = torch.argmax(logits, -1)
+#     correct = (outputs == labels).float()
+#     accuracy = torch.mean(correct)
+#     loss = F.cross_entropy(logits, labels)
+    
+#     # print(f"loss {sp_rank}: {loss}", flush=True)
+#     ## only sp_src_rank has first clf token, but why...
+#     # first_token_loss = loss.detach()
+#     # dist.broadcast(tensor=first_token_loss, src=sp_src_rank, group=sp_group)
+#     # dist.broadcast(tensor=accuracy, src=sp_src_rank, group=sp_group)
+#     # averaged_loss = average_losses_across_data_parallel_group([first_token_loss, accuracy])
+
+#     ## Q. Why doesn't the below ruin our loss and acc as they get reduced across by "noise tokens"? (DP vs. SP looks perfect)
+#     averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
+#     return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
+#     # sp_rank = mpu.get_sequence_parallel_rank()
+#     # sp_world_size = mpu.get_sequence_parallel_world_size()
+
+#     # logits = output_tensor.contiguous().float()
+#     # if sp_rank == 0:
+#     #     logits = output_tensor.contiguous().float()
+#     # else:
+#     #     logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
+#     #     ## TODO: Would adding barrier help with saving compute? 
+
+#     # outputs = torch.argmax(logits, -1)
+#     # correct = (outputs == labels).float()
+#     # accuracy = torch.mean(correct)
+#     # if sp_world_size > 1:
+#     #     ## TODO: below will be useful for VIT Auto-encoder
+#     #     # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
+#     #     loss = F.cross_entropy(logits, labels)
+#     # else:
+#     #     ## TODO: Find a way to not do below compute? 
+#     #     loss = F.cross_entropy(logits, labels)
+    
+#     # import os
+#     # debug_mode = 'DEBUG_FNAME' in os.environ
+#     # if debug_mode:
+#     #     debug_fname = os.environ["DEBUG_FNAME"]
+#     #     if sp_rank==0:
+#     #         torch.save(output_tensor, f"{debug_fname}.pt")
+
+#     #     with open(debug_fname, "a") as f:
+#     #         f.write(f"\n[{sp_rank}] output after head: {output_tensor}\n")
+#     #         # f.write(f"\n[{sp_rank}] output after head shape: {output_tensor.shape}\n")
+#     #         f.write(f"\n[{sp_rank}] loss: {loss}\n")
+
+#     # averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
+#     # return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
+
 def loss_func(labels, output_tensor):
     sp_rank = mpu.get_sequence_parallel_rank()
-    sp_src_rank = mpu.get_sequence_parallel_src_rank()
-    # sp_world_size = mpu.get_sequence_parallel_world_size()
-    sp_group = mpu.get_sequence_parallel_group()
-
-    logits = output_tensor.contiguous().float()
-    if sp_rank == 0:
-        logits = output_tensor.contiguous().float()
-    else:
-        logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
-
+    logits = output_tensor.contiguous()
     outputs = torch.argmax(logits, -1)
     correct = (outputs == labels).float()
     accuracy = torch.mean(correct)
     loss = F.cross_entropy(logits, labels)
-    
-    # print(f"loss {sp_rank}: {loss}", flush=True)
-    ## only sp_src_rank has first clf token, but why...
-    # first_token_loss = loss.detach()
-    # dist.broadcast(tensor=first_token_loss, src=sp_src_rank, group=sp_group)
-    # dist.broadcast(tensor=accuracy, src=sp_src_rank, group=sp_group)
-    # averaged_loss = average_losses_across_data_parallel_group([first_token_loss, accuracy])
-
-    ## Q. Why doesn't the below ruin our loss and acc as they get reduced across by "noise tokens"? (DP vs. SP looks perfect)
+    if sp_rank != 0:
+        ## DROPOUT ALL, cut off gradients
+        loss = loss * 0 
+    ## TODO: Q. Why doesn't the below ruin our loss and acc as they get reduced across by "noise tokens"? (DP vs. SP looks perfect). Maybe the below isn't whats visualized on wandb? 
     averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
     return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
-    # sp_rank = mpu.get_sequence_parallel_rank()
-    # sp_world_size = mpu.get_sequence_parallel_world_size()
-
-    # logits = output_tensor.contiguous().float()
-    # if sp_rank == 0:
-    #     logits = output_tensor.contiguous().float()
-    # else:
-    #     logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
-    #     ## TODO: Would adding barrier help with saving compute? 
-
-    # outputs = torch.argmax(logits, -1)
-    # correct = (outputs == labels).float()
-    # accuracy = torch.mean(correct)
-    # if sp_world_size > 1:
-    #     ## TODO: below will be useful for VIT Auto-encoder
-    #     # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
-    #     loss = F.cross_entropy(logits, labels)
-    # else:
-    #     ## TODO: Find a way to not do below compute? 
-    #     loss = F.cross_entropy(logits, labels)
-    
-    # import os
-    # debug_mode = 'DEBUG_FNAME' in os.environ
-    # if debug_mode:
-    #     debug_fname = os.environ["DEBUG_FNAME"]
-    #     if sp_rank==0:
-    #         torch.save(output_tensor, f"{debug_fname}.pt")
-
-    #     with open(debug_fname, "a") as f:
-    #         f.write(f"\n[{sp_rank}] output after head: {output_tensor}\n")
-    #         # f.write(f"\n[{sp_rank}] output after head shape: {output_tensor.shape}\n")
-    #         f.write(f"\n[{sp_rank}] loss: {loss}\n")
-
-    # averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
-    # return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
 
 
 def forward_step(data_iterator, model):

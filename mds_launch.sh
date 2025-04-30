@@ -64,6 +64,7 @@ if [[ $MACHINE == "aurora" ]]; then
           export FI_CXI_RX_MATCH_MODE=hybrid
           export CCL_BCAST=double_tree
      }
+     # TODO: add back deepspeed with MICS
      DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps" ## Test DeepSpeed 16.3? 
      # DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps2/DeepSpeed" ## Test DeepSpeed 16.3? 
      set_ccl_vars_on_aurora ## Gordon Bell Run
@@ -125,8 +126,8 @@ YUNCHANG="${WORKING_DIR}/long-context-attention" ## Custom yunchang (USP)
 PYTHONPATH="${DEEPSPEED}:${YUNCHANG}:${PYTHONPATH}"
 export PYTHONPATH="${WORKING_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## HOST NODE
-# export MASTER_ADDR=localhost
-# export MASTER_PORT=6000
+export MASTER_ADDR=$(hostname)
+export MASTER_PORT=6000
 
 ## LIMIT GPUs VISIBLE (FOR 1-NODE EXPERIMENTS)
 if [ ${SIZE:-"-1"} -eq 1 ]; then
@@ -423,6 +424,12 @@ elif [[ $VIT == "BASE" ]]; then
     HSIZE=768
     FFN_HSIZE=3072
     NUM_HEADS=12
+elif [[ $VIT == "SWIN_LIKE" ]]; then
+    ## VIT-LARGE (307M)
+    NLAYERS=12
+    HSIZE=1152
+    FFN_HSIZE=4096
+    NUM_HEADS=8
 elif [[ $VIT == "LARGE" ]]; then
     ## VIT-LARGE (307M)
     NLAYERS=24
@@ -784,15 +791,18 @@ if [[ $MACHINE == "aurora" ]]; then
           # --cpu-bind depth -d ${NGPUS} \
      ## TODO: Why does cpu bind depth 16 works but not 24 for 2 nodes? 
      ## TODO: torchrun with mpiexec breaks but works great on polaris, why? 
-     run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
-          --cpu-bind depth -d 16 \
-          $nsys python \
-          ${WORKING_DIR}/${pretrain_script}_ezpz.py \
-          ${CLASSIFIER_ARGS} \
-          ${DATA_ARGS} \
-          ${OUTPUT_ARGS} \
-          ${MEG_ARGS} \
-          ${DS_ARGS}"
+
+    # CPU_BIND="list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
+    run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} \
+        --hostfile ${PBS_NODEFILE} --cpu-bind depth -d 16 \
+        $nsys python \
+        ${WORKING_DIR}/${pretrain_script}_ezpz.py \
+        ${CLASSIFIER_ARGS} \
+        ${DATA_ARGS} \
+        ${OUTPUT_ARGS} \
+        ${MEG_ARGS} \
+        ${DS_ARGS} \
+    "
 elif [[ $MACHINE == "polaris" ]]; then
      export RDZV_HOST=$(hostname)
      export RDZV_PORT=$RANDOM

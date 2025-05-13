@@ -43,8 +43,6 @@ if [[ $MACHINE == "aurora" ]]; then
           export CCL_CONFIGURATION_PATH=""
           export CCL_CONFIGURATION=cpu_gpu_dpcpp
           export CCL_KVS_CONNECTION_TIMEOUT=3600
-          export FI_CXI_RX_MATCH_MODE=hybrid
-          export CCL_BCAST=double_tree
 
           export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
           export CCL_PROCESS_LAUNCHER=pmix # Required by Aurora mpich
@@ -62,20 +60,56 @@ if [[ $MACHINE == "aurora" ]]; then
           export CCL_ZE_CACHE_OPEN_IPC_HANDLES_THRESHOLD=32768
           export FI_CXI_DEFAULT_CQ_SIZE=1048576
           export FI_CXI_RX_MATCH_MODE=hybrid
-          export CCL_BCAST=double_tree
+
+          export CCL_ALLGATHERV=topo
+          export CCL_ALLREDUCE=topo
+          #  export CCL_BCAST=double_tree
+          export CCL_BARRIER=ring
+          export CCL_ALLREDUCE_SCALEOUT=ring
+          #  export CCL_ALLREDUCE_SCALEOUT=rabenseifener
+          export CCL_ALLGATHER_SCALEOUT=ring
+          export CCL_ALLGATHERV_SCALEOUT=ring
+     }
+
+     set_ccl_vars_on_aurora2() {
+        export CCL_KVS_MODE=mpi
+        export CCL_KVS_CONNECTION_TIMEOUT=600 
+        export PALS_PMI=pmix
+        export CCL_ATL_TRANSPORT=mpi
+
+        export TORCH_LLM_ALLREDUCE=1
+        export CCL_SYCL_ESIMD=1
+        export CCL_ATL_SYNC_COLL=1
+        export CCL_OP_SYNC=1
+        export CCL_ENABLE_AUTO_CACHE=0
+        export CCL_ZE_CACHE_OPEN_IPC_HANDLES_THRESHOLD=4096
+
+        export CCL_ALLREDUCE=topo
+        export CCL_ALLGATHERV=direct
+        export CCL_ALLGATHERV_MEDIUM_SIZE_THRESHOLD=0
+        export CCL_ALLREDUCE_SCALEOUT=direct
+        export CCL_BCAST=double_tree
+
+        export FI_CXI_DEFAULT_CQ_SIZE=1048576
+        export FI_CXI_RX_MATCH_MODE=hybrid
+        export FI_MR_CACHE_MONITOR=disabled
+        export FI_CXI_OFLOW_BUF_SIZE=8388608
+        export FI_CXI_CQ_FILL_PERCENT=30
+
+        export CCL_WORKER_AFFINITY=1,9,17,25,33,41,53,61,69,77,85,93
+        export CPU_BIND="list:2-8:10-16:18-24:26-32:34-40:42-48:54-60:62-68:70-76:78-84:86-92:94-100"
+        export NUMEXPR_MAX_THREADS=7
+        export OMP_NUM_THREADS=7
+
+        export PALS_PING_PERIOD=480
+        export PALS_RPC_TIMEOUT=480
      }
      # TODO: add back deepspeed with MICS
      DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps" ## Test DeepSpeed 16.3? 
+     set_ccl_vars_on_aurora2
      # DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps2/DeepSpeed" ## Test DeepSpeed 16.3? 
-     set_ccl_vars_on_aurora ## Gordon Bell Run
-     export CCL_ALLGATHERV=topo
-     export CCL_ALLREDUCE=topo
-     export CCL_BCAST=double_tree
-     export CCL_BARRIER=ring
-     export CCL_ALLREDUCE_SCALEOUT=ring
-    #  export CCL_ALLREDUCE_SCALEOUT=rabenseifener
-     export CCL_ALLGATHER_SCALEOUT=ring
-     export CCL_ALLGATHERV_SCALEOUT=ring
+    #  set_ccl_vars_on_aurora ## Gordon Bell Run
+
 elif [[ $MACHINE == "polaris" ]]; then 
      module load conda
      conda activate

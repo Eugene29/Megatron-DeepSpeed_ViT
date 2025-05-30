@@ -1,13 +1,7 @@
 # Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain VIT"""
-# from mpi4py import MPI
-# import torch.distributed as dist
-# import torch.distributed
 import deepspeed.comm as dist
-# comm = MPI.COMM_WORLD
-# comm.Barrier()
-
 import torch
 import torch.nn.functional as F
 from functools import partial
@@ -32,7 +26,7 @@ def model_provider(pre_process=True, post_process=True):
     config = core_transformer_config_from_args(args)
     # see_memory_usage(f"Before Building Model", force=True)
 
-    ##TODO: enable PP here
+    ##TODO: enable PP here?
     if hasattr(mpu, 'get_sequence_data_parallel_group'):
         dpg = mpu.get_sequence_data_parallel_group()
     elif hasattr(mpu, 'get_data_parallel_group'):
@@ -163,6 +157,43 @@ def loss_func(labels, output_tensor):
     accuracy = torch.mean(correct)
     loss = F.cross_entropy(logits, labels)
     
+    averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
+    return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
+
+def forward_step(data_iterator, model):
+    """Forward step."""
+    timers = get_timers()
+
+    # Get the batch.
+    timers("batch-generator", log_level=2).start()
+    (
+        images,
+        labels,
+    ) = get_batch(data_iterator)
+    timers("batch-generator").stop()
+
+    # Forward model. lm_labels
+    output_tensor = model(images)
+
+    return output_tensor, partial(loss_func, labels)
+
+def train_valid_test_datasets_provider(train_val_test_num_samples):
+    """Build train, valid, and test datasets."""
+    args = get_args()
+
+    print_rank_0(
+        "> building train, validation, and test datasets " "for VIT ..."
+    )
+    train_ds, valid_ds = build_train_valid_datasets(
+        data_path=args.data_path,
+        image_size=(args.img_h, args.img_w)
+    )
+    print_rank_0("> finished creating VIT datasets ...")
+
+    return train_ds, valid_ds, None
+
+
+if __name__ == "__main__":
     import time
     from megatron import get_wandb_writer
     train_strt = time.time()

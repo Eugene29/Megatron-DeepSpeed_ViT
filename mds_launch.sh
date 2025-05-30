@@ -33,8 +33,10 @@ get_machine
 
 if [[ $MACHINE == "aurora" ]]; then 
      WANDB_PROJECT_NAME="AuroraViT"
+     # Below DATA_DIR is just a placeholder and will only be used if DATA is set to CIFAR. For benchmarking only purposes, it can be set to any existing filepath.
      DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
-     . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate ## env with ezpz, etc.
+     ## env with ezpz, etc.
+     . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
      FA_VERSION="--use-flash-attn-builder"
      NGPU_PER_HOST=12
      set_ccl_vars_on_aurora() {
@@ -140,10 +142,15 @@ elif [[ $MACHINE == "polaris" ]]; then
      # [rank0]: ncclUnhandledCudaError: Call to CUDA function failed.
      # export NCCL_DEBUG=INFO
 else
-     echo "Not Impelmented Error for $MACHINE Machine"; exit 1
+     #### CUSTOMIZE HERE ####
+     echo "Not Impelmented Error for $MACHINE Machine. Manually set env variables";
+     exit 1
+     NGPU_PER_HOST="<number of GPUs per node>"
+     NHOSTS="<number of nodes>"
 fi
 
 ## PYTHONPATH 
+# NOTE: Yunchang is not used for ALCF4 Benchmark
 WORKING_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
 # cd $WORKING_DIR
 # YUNCHANG="${WORKING_DIR}/long-context-attention" ## Custom yunchang (USP)
@@ -231,8 +238,7 @@ elif [[ $DATA == 'CIFAR' ]]; then
     ## DATA
     NUM_EPOCHS=${NUM_EPOCHS:-500}
     TRAIN_SIZE=40000
-    EVAL_ITERS=19 ##TODO: Val samples?
-    # EVAL_ITERS=$((10000 / 512)) ##TODO: Val samples?
+    EVAL_ITERS=19
     TRAIN_SAMPLES=$(($NUM_EPOCHS * $TRAIN_SIZE))
     LR_WARMUP_SAMPLES=0
     DS_CONFIG_FNAME="CIFAR.json"
@@ -753,18 +759,19 @@ elif [[ $MACHINE == "polaris" ]]; then
           ${OUTPUT_ARGS} \
           ${MEG_ARGS} \
           ${DS_ARGS}"
-     ## mpiexec with ezpz
-     # run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} --hostfile ${PBS_NODEFILE} \
-     #      --cpu-bind depth -d ${NGPUS} \
-     #      $nsys python \
-     #      ${WORKING_DIR}/pretrain_vision_classify_ezpz.py \
-     #      ${CLASSIFIER_ARGS} \
-     #      ${DATA_ARGS} \
-     #      ${OUTPUT_ARGS} \
-     #      ${MEG_ARGS} \
-     #      ${DS_ARGS}"
 else
-     echo "unknown machine keyerror"; exit 1
+     #### CUSTOMIZE HERE ####
+     echo "unknown machine. Opting for mpiexec + torchrun to execute multi-gpu/node program. May need to temper run_cmd for functionality/performance";
+     export RDZV_HOST=$(hostname)
+     export RDZV_PORT=$RANDOM
+     run_cmd="mpiexec --verbose --envall -n ${NHOSTS} -ppn 1 --cpu-bind depth -d ${NGPUS} \
+          python3 -m torch.distributed.run --rdzv_backend=c10d --rdzv_endpoint="$RDZV_HOST:$RDZV_PORT" --nnodes=${NHOSTS} --nproc_per_node=${NGPU_PER_HOST} \
+          ${WORKING_DIR}/${pretrain_script}.py \
+          ${CLASSIFIER_ARGS} \
+          ${DATA_ARGS} \
+          ${OUTPUT_ARGS} \
+          ${MEG_ARGS} \
+          ${DS_ARGS}"
 fi
 
 

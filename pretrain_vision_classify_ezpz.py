@@ -21,8 +21,6 @@ from megatron.utils import average_losses_across_data_parallel_group
 from megatron.arguments import core_transformer_config_from_args
 import deepspeed
 import os
-# import ezpz as ez
-# import time
 # from deepspeed.runtime.utils import see_memory_usage
 
 
@@ -33,7 +31,7 @@ def model_provider(pre_process=True, post_process=True):
     config = core_transformer_config_from_args(args)
     # see_memory_usage(f"Before Building Model", force=True)
 
-    ## TODO: enable PP
+    ##TODO: enable PP here
     if hasattr(mpu, 'get_sequence_data_parallel_group'):
         dpg = mpu.get_sequence_data_parallel_group()
     elif hasattr(mpu, 'get_data_parallel_group'):
@@ -158,14 +156,64 @@ def loss_func(labels, output_tensor):
     if sp_rank != 0:
         ## DROPOUT ALL, cut off gradients
         loss = loss * 0 
-    RANK = ez.setup_torch(backend="deepspeed")#, timeout=72000) ## 20 hours max.
+    averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
+    return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
+
+
+def forward_step(data_iterator, model):
+    """Forward step."""
+    timers = get_timers()
+
+    # Get the batch.
+    timers("batch-generator", log_level=2).start()
+    (
+        images,
+        labels,
+    ) = get_batch(data_iterator)
+    timers("batch-generator").stop()
+
+    # Forward model. lm_labels
+    output_tensor = model(images)
+
+    return output_tensor, partial(loss_func, labels)
+
+def train_valid_test_datasets_provider(train_val_test_num_samples):
+    """Build train, valid, and test datasets."""
+    args = get_args()
+
+    print_rank_0(
+        "> building train, validation, and test datasets " "for VIT ..."
+    )
+    train_ds, valid_ds = build_train_valid_datasets(
+        data_path=args.data_path,
+        image_size=(args.img_h, args.img_w)
+    )
+    print_rank_0("> finished creating VIT datasets ...")
+
+    return train_ds, valid_ds, None
+
+
+if __name__ == "__main__":
+    import ezpz as ez
+    RANK = ez.setup_torch(backend="deepspeed")
     WORLD_SIZE = ez.get_world_size()
     LOCAL_RANK = ez.get_local_rank()
     DEVICE_TYPE = ez.dist.get_torch_device_type()
 
-    # local_rank = int(os.environ["LOCAL_RANK"])
     if torch.cuda.is_available():
         torch.cuda.set_device(LOCAL_RANK)
+
+    import time
+    from megatron import get_wandb_writer
+    train_strt = time.time()
+    # try:
+    pretrain(
+        train_valid_test_datasets_provider,
+        model_provider,
+        ModelType.encoder_or_decoder,
+        forward_step,
+        args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
+    )
 
     dist.barrier() ## prevent accidental saving? 
     print_rank_0(f"tot train time: {time.time() - train_strt}")
@@ -181,7 +229,6 @@ def loss_func(labels, output_tensor):
         wandb_writer.log(log_dict, step=args.logger_iteration)
 
         print("Pretrain completed.")
-
     print_rank_0("switching stderr to /dev/null to prevent endless stream of 'longjmp'")
     import sys
     sys.stderr = open(os.devnull, "w")

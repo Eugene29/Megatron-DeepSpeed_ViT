@@ -7,9 +7,8 @@
 #PBS -N vit_alcf4
 #PBS -k doe
 
-module use /soft/modulefiles
-module load conda; conda activate base
-SCRIPT_DIR=$(dirname "/eagle/datascience/vsastry/Vit_Pipeline/alcf4ViTbenchmark/latest_vit/Megatron-DeepSpeed_ViT/mult_mds.sh" | xargs realpath) ## Better for qsubing
+SCRIPT_PTH="/eagle/datascience/vsastry/Vit_Pipeline/alcf4ViTbenchmark/latest_vit/Megatron-DeepSpeed_ViT/mult_mds.sh" ## <Change to your script's path>
+SCRIPT_DIR=$(dirname $SCRIPT_PTH | xargs realpath) ## Better for qsubing
 LOGDIR=$SCRIPT_DIR/logs
 MAIN_SCRIPT=$SCRIPT_DIR/mds_launch.sh
 mkdir -p $LOGDIR

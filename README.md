@@ -1,4 +1,4 @@
-## Clone:
+## Clone 
 If not already cloned,
 ```
   git clone --recursive https://github.com/Eugene29/Megatron-DeepSpeed_ViT.git  # Clone module & submodule
@@ -11,6 +11,10 @@ If not already cloned,
 
 ## Main Script for Entry:
 Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll need to modify `SCRIPT_DIR`. Environment variables not in `mult_mds_*.sh` can be found and configured in `mds_launch.sh`. 
+
+## For ALCF4 Benchmark:
+- Please run `mult_mds_polaris_alcf4.sh`
+- Environment variable `DATA_DIR` is just a placeholder and will only be used when using CIFAR dataset (i.e. `DATA=CIFAR`). For benchmarking only purposes, it can be set to any existing filepath.
 
 ## POSSIBLE ENV VARIABLES
 ```
@@ -47,5 +51,6 @@ drop_last_batch_with_GBS=1  ## fixes the data order as long as GBS is matching.
 ```
 
 ## Environment
-Only base environment is needed for polaris cluster while for aurora, we employ sam's ezpz library on top of base environment. Thus, a suitable virtual environment (in flare file-system) is activated automatically on aurora. 
+Only base environment is needed for polaris cluster while for aurora, sam's ezpz library will be needed on top of the base environment. A suitable virtual environment is activated automatically on aurora.
 
+Environment outside of polaris and aurora is WIP..

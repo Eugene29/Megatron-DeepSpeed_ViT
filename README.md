@@ -1,4 +1,4 @@
-## Clone:
+## Clone 
 If not already cloned,
 ```
   git clone --recursive https://github.com/Eugene29/Megatron-DeepSpeed_ViT.git  # Clone module & submodule
@@ -11,6 +11,10 @@ If not already cloned,
 
 ## Main Script for Entry:
 Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll need to modify `SCRIPT_DIR`. Environment variables not in `mult_mds_*.sh` can be found and configured in `mds_launch.sh`. 
+
+## For ALCF4 Benchmarking:
+- Please run mult_mds_polaris_alcf4.sh
+- Environment variable DATA_DIR is just a placeholder and will only be used when using CIFAR dataset (i.e. DATA=CIFAR). For benchmarking only purposes, it can be set to any existing filepath.
 
 ## POSSIBLE ENV VARIABLES
 ```
@@ -44,7 +48,6 @@ drop_last_batch_with_GBS=1  ## fixes the data order as long as GBS is matching.
 1. Pass either GBS or MBS
 2. Pass either fp16 or bf16
 3. Without ZERO3, only fp16 can be used (for now).
-4. DATA_DIR is just a placeholder and will only be used when using CIFAR dataset (i.e. DATA=CIFAR). For benchmarking only purposes, it can be set to any existing filepath.
 ```
 
 ## Environment

@@ -14,7 +14,11 @@ Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll n
 
 ## For ALCF4 Benchmark:
 - Please run `mult_mds_polaris_alcf4.sh`
-- Environment variable `DATA_DIR` is just a placeholder and will only be used when using CIFAR dataset (i.e. `DATA=CIFAR`). For benchmarking only purposes, it can be set to any existing filepath.
+- Environment variable `DATA_DIR` can be set to any existing filepath as it is just a placeholder when using a toy dataset (i.e. `DATA=TOY`).
+- Three places need code changes:
+  - Two `#### CUSTOMIZE HERE ####` in `mds_launch.sh`
+  - `SCRIPT_PTH` in `mult_mds_polaris_alcf4.sh`
+- Checkout `requirements.txt` for enviornment
 
 ## POSSIBLE ENV VARIABLES
 ```
@@ -52,5 +56,3 @@ drop_last_batch_with_GBS=1  ## fixes the data order as long as GBS is matching.
 
 ## Environment
 Only base environment is needed for polaris cluster while for aurora, sam's ezpz library will be needed on top of the base environment. A suitable virtual environment is activated automatically on aurora.
-
-Environment outside of polaris and aurora is WIP..

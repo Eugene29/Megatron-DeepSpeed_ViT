@@ -32,7 +32,6 @@ get_machine() {
 get_machine
 
 if [[ $MACHINE == "aurora" ]]; then 
-     module load frameworks
      WANDB_PROJECT_NAME="AuroraViT"
      # Below DATA_DIR is just a placeholder and will only be used if DATA is set to CIFAR. For benchmarking only purposes, it can be set to any existing filepath.
      DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
@@ -143,11 +142,14 @@ elif [[ $MACHINE == "polaris" ]]; then
      # [rank0]: ncclUnhandledCudaError: Call to CUDA function failed.
      # export NCCL_DEBUG=INFO
 else
-     echo "Not Impelmented Error for $MACHINE Machine. Manually set env variables here\
-     and try again";
+     #### CUSTOMIZE HERE ####
+     echo "Not Impelmented Error for $MACHINE Machine. Manually set env variables";
      exit 1
      NGPU_PER_HOST="<number of GPUs per node>"
      NHOSTS="<number of nodes>"
+     DATA_DIR="<any existing filepath>"
+     FA_VERSION="--use-flash-attn-v2"  # Default FA version
+     # <activate your environment>
 fi
 
 ## PYTHONPATH 
@@ -761,7 +763,8 @@ elif [[ $MACHINE == "polaris" ]]; then
           ${MEG_ARGS} \
           ${DS_ARGS}"
 else
-     echo "unknown machine. Opting for torchrun to execute multi-gpu/node program"; 
+     #### CUSTOMIZE HERE ####
+     echo "unknown machine. Opting for mpiexec + torchrun to execute multi-gpu/node program. May need to temper run_cmd for functionality/performance";
      export RDZV_HOST=$(hostname)
      export RDZV_PORT=$RANDOM
      run_cmd="mpiexec --verbose --envall -n ${NHOSTS} -ppn 1 --cpu-bind depth -d ${NGPUS} \

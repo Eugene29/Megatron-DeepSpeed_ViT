@@ -2,7 +2,7 @@
 
 ## ENVIRONMENT
 echo "Launching Megatron Deepspeed VIT."
-TZ="America/Chicago" date ## Q. How does this command print something?
+TZ="America/Chicago" date
 
 ## COMMUNICATION
 NHOSTS=$(wc -l < "${PBS_NODEFILE}")
@@ -32,7 +32,6 @@ get_machine() {
 get_machine
 
 if [[ $MACHINE == "aurora" ]]; then 
-     ## {Aurora: frameworks-2024.2.1_u1, Polaris: 2024-08-08 base}
      WANDB_PROJECT_NAME="AuroraViT"
      DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
      . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate ## env with ezpz, etc.
@@ -104,17 +103,12 @@ if [[ $MACHINE == "aurora" ]]; then
         export PALS_PING_PERIOD=480
         export PALS_RPC_TIMEOUT=480
      }
-     # TODO: add back deepspeed with MICS
-     DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps" ## Test DeepSpeed 16.3? 
      set_ccl_vars_on_aurora2
-     # DEEPSPEED="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps2/DeepSpeed" ## Test DeepSpeed 16.3? 
-    #  set_ccl_vars_on_aurora ## Gordon Bell Run
 
 elif [[ $MACHINE == "polaris" ]]; then 
      module load conda
      conda activate
-     # . /lus/eagle/projects/datascience/eku/venv/vit/bin/activate # if you want sam's ezpz
-     ## Huihuo's config
+
      export AWS_DIR=/soft/libraries/aws-ofi-nccl/v1.6.0/
      export NCCL_NET_GDR_LEVEL=PHB
      export NCCL_CROSS_NIC=1
@@ -139,9 +133,6 @@ elif [[ $MACHINE == "polaris" ]]; then
      WANDB_PROJECT_NAME="PolarisViT"
      DATA_DIR="/eagle/datascience/eku/data"
      FA_VERSION="--use-flash-attn-v2"
-     DEEPSPEED="/eagle/datascience/eku/test/test_MICS/Megatron-DeepSpeed/deps" ## Overwrite to DeepSpeed 0.16.3 with MICS fix. 
-     
-     # FA_VERSION="--use-flash-attn-builder" ## TODO: Change back to v2 - why not v3? 
      NGPU_PER_HOST=4
      ## EXPERIMENTAL (This somehow fixes the OOM issue for Ring-Att?)
      export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -154,10 +145,9 @@ fi
 
 ## PYTHONPATH 
 WORKING_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
-cd $WORKING_DIR
-YUNCHANG="${WORKING_DIR}/long-context-attention" ## Custom yunchang (USP)
-# DEEPSPEED="${WORKING_DIR}/DeepSpeed" ## Custom DeepSpeed
-PYTHONPATH="${DEEPSPEED}:${YUNCHANG}:${PYTHONPATH}"
+# cd $WORKING_DIR
+# YUNCHANG="${WORKING_DIR}/long-context-attention" ## Custom yunchang (USP)
+# PYTHONPATH="${DEEPSPEED}:${YUNCHANG}:${PYTHONPATH}"
 export PYTHONPATH="${WORKING_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## HOST NODE
 export MASTER_ADDR=$(hostname)
@@ -227,21 +217,6 @@ fi
 if [[ $DATA == 'IMNET' ]]; then
     echo "Not Implemented Error"
     exit 1
-    # DATA_PATH="~/aevard/datasets/imnet-20/train ~/aevard/datasets/imnet-20/valid"
-    # DATA_PATH="$AEVARD_PATH/imnet-20/train $AEVARD_PATH/imnet-20/valid"
-    NUM_CLASSES=20
-    LR=1e-4
-    WEIGHT_DECAY=0
-    PATCH_DIM=16
-    IMG_W=224
-    IMG_H=224
-
-    ## DATA
-    NUM_EPOCHS=100
-    TRAIN_SIZE=24912
-    TRAIN_SAMPLES=$(($NUM_EPOCHS * $TRAIN_SIZE)) ##TODO: Why does IMNET only have 24912 image samples? 
-    LR_WARMUP_SAMPLES=1000
-    DS_CONFIG_FNAME="IMNET.json"
 elif [[ $DATA == 'CIFAR' ]]; then
     echo "TRAINING ON CIFAR"
     DATA_PATH="$DATA_DIR/CIFAR10/train $DATA_DIR/CIFAR10/valid"
@@ -264,7 +239,7 @@ elif [[ $DATA == 'CIFAR' ]]; then
 elif [[ $DATA == 'TOY' ]]; then
     echo "TRAINING ON TOY DATASET"
     ##Toy Dataset
-    DATA_PATH="$DATA_DIR/CIFAR10/train $DATA_DIR/CIFAR10/valid" ## Dummy data path
+    DATA_PATH="$DATA_DIR $DATA_DIR" ## Dummy data path
     NUM_CLASSES=20
     PATCH_DIM=16
     factor=${factor:-54}
@@ -388,57 +363,6 @@ cat <<EOF > "$WORKING_DIR/$DS_CONFIG_FNAME"
 }
 EOF
 
-
-## fp16
-
-## broken
-#   "data_types": {
-#     "grad_accum_dtype": "fp32" 
-#   },
-
-## prevents comm overlap
-
-## Below configs seems to not do anything
-#  "activation_checkpointing": {
-#     "partition_activations": false,
-#     "cpu_checkpointing": false,
-#     "contiguous_memory_optimization": false,
-#     "number_checkpoints": null,
-#     "synchronize_checkpoint_boundary": false,
-#     "profile": false
-#     }
-
-# cat <<EOF > "$DS_CONFIG_FNAME"
-# {
-#     "train_micro_batch_size_per_gpu": $MBS,
-#     "steps_per_print": 9999999999,
-#     "gradient_accumulation_steps": 1,
-#     "zero_allow_untested_optimizer": true,
-#     "gradient_clipping": 1.0,
-#     "communication_data_type": "fp16",
-#     "fp16": {
-#                 "enabled": true,
-#                 "loss_scale": 0
-#             },
-#     "wall_clock_breakdown": false,
-#     "logging_level": "WARNING",
-
-#     "zero_optimization": {
-#         "stage": $ZERO,
-#         "overlap_comm": true
-#     },
-#     "comms_logger": {
-#         "enabled": true,
-#         "verbose": false,
-#         "prof_all": true,
-#         "debug": false
-#     }
-# }
-# EOF
-        # "contiguous_gradients": true,
-        # "reduce_scatter": true,
-        # "allgather_partitions": true,
-        # "mics_hierarchical_params_gather": true
 
 ## MODEL CONFIGURATION ##
 export VIT=${VIT:-"LARGE"}
@@ -706,7 +630,6 @@ export SEQ_LEN=$SEQ_LEN
 echo "Sequence length: ${SEQ_LEN}"
 
 ## ARGUMENTS
-# source "${WORKING_DIR}/mds_args.sh" ## merged mds_args.sh to mds_launch.sh
 ds_json=${WORKING_DIR}/${DS_CONFIG_FNAME}
 echo "Working Directory: ${WORKING_DIR}"
 echo "PYTHONPATH: $PYTHONPATH"
@@ -751,9 +674,6 @@ CLASSIFIER_ARGS="
      --no-masked-softmax-fusion \
      --no-bias-dropout-fusion \
 "
-     # --accumulate-allreduce-grads-in-fp32 \ ## To keep or not to keep? 
-     # --fp16 \
-## TODO: does --no-async-tensor-model-parallel-allreduce \ make things faster? 
 
 # MODEL ARGUMENTS
 if [[ $FA -eq 1 ]]; then
@@ -794,39 +714,24 @@ DATA_ARGS="
      --split 949,50,1 \
      --eval-iters 0  
 "
-## TODO: What really happens if you don't set eval-iter? How to evaluate on entire validation set?
 OUTPUT_ARGS="
      --log-interval 5 \
      --eval-interval $EVAL_INTERVAL \
      --wandb-project $WANDB_PROJECT_NAME \
      --save-interval 2500 \
 "
-     # --save-interval 5 \ ## checkpointing (TBD - postponed)
 DS_ARGS="
      --deepspeed \
      --deepspeed_config=$ds_json
 "
 if [[ $ACT_CKPT -eq 1 ]]; then
-     DS_ARGS="--deepspeed-activation-checkpointing $DS_ARGS" ## Useless? 
+     DS_ARGS="--deepspeed-activation-checkpointing $DS_ARGS" 
      MEG_ARGS="--checkpoint-activations"
 fi
 
-## TODO: Add prescale grad option?
-# prescale_grad="true"
-
 echo "Launching mpiexec."
-## If needed to direct stdout/err
-# if [[ $SAVE_LOG_TO ]]; then
-#      SAVE_LOG_TO="|& tee $SAVE_LOG_TO"
-# fi
-# nsys="nsys profile -o $log_dir/$time --stats=true --show-output=true"
 nsys=""
 if [[ $MACHINE == "aurora" ]]; then
-          # --cpu-bind depth -d ${NGPUS} \
-     ## TODO: Why does cpu bind depth 16 works but not 24 for 2 nodes? 
-     ## TODO: torchrun with mpiexec breaks but works great on polaris, why? 
-
-    # CPU_BIND="list:2-4:10-12:18-20:26-28:34-36:42-44:54-56:62-64:70-72:78-80:86-88:94-96"
     run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} \
         --hostfile ${PBS_NODEFILE} --cpu-bind depth -d 16 \
         $nsys python \
@@ -840,7 +745,6 @@ if [[ $MACHINE == "aurora" ]]; then
 elif [[ $MACHINE == "polaris" ]]; then
      export RDZV_HOST=$(hostname)
      export RDZV_PORT=$RANDOM
-          # --hostfile ${PBS_NODEFILE} \
      run_cmd="mpiexec --verbose --envall -n ${NHOSTS} -ppn 1 --cpu-bind depth -d ${NGPUS} \
           python3 -m torch.distributed.run --rdzv_backend=c10d --rdzv_endpoint="$RDZV_HOST:$RDZV_PORT" --nnodes=${NHOSTS} --nproc_per_node=${NGPU_PER_HOST} \
           ${WORKING_DIR}/${pretrain_script}.py \
@@ -863,14 +767,6 @@ else
      echo "unknown machine keyerror"; exit 1
 fi
 
-## Vanilla torchrun. Doesn't work atm at least on polaris.
-# run_cmd="torchrun --nproc-per-node 4 --rdzv_backend c10d --rdzv_endpoint "$RDZV_HOST:$RDZV_PORT" \
-#      ${WORKING_DIR}/pretrain_vision_classify.py \
-#      ${CLASSIFIER_ARGS} \
-#      ${DATA_ARGS} \
-#      ${OUTPUT_ARGS} \
-#      ${MEG_ARGS} \
-#      ${DS_ARGS}"
 
 echo "run cmd: $run_cmd"
 eval $run_cmd

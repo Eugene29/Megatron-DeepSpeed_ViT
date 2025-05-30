@@ -1,7 +1,6 @@
 # Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain VIT"""
-# import torch.distributed as dist
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
 comm.Barrier()
@@ -22,12 +21,10 @@ from megatron.utils import average_losses_across_data_parallel_group
 from megatron.arguments import core_transformer_config_from_args
 import deepspeed
 import os
+# import ezpz as ez
+# import time
 # from deepspeed.runtime.utils import see_memory_usage
 
-# import sys
-# sys.path
-# print(f"sys.path: {sys.path}", flush=True)
-# exit()
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
@@ -36,7 +33,7 @@ def model_provider(pre_process=True, post_process=True):
     config = core_transformer_config_from_args(args)
     # see_memory_usage(f"Before Building Model", force=True)
 
-    ##TODO: enable PP here?
+    ## TODO: enable PP
     if hasattr(mpu, 'get_sequence_data_parallel_group'):
         dpg = mpu.get_sequence_data_parallel_group()
     elif hasattr(mpu, 'get_data_parallel_group'):
@@ -128,7 +125,6 @@ def get_batch(data_iterator):
             data_dict = None
     else:
         # Broadcast data.
-        ## TODO: Everyone tries to read data? 
         if data_iterator is not None:
             data = next(data_iterator)
             data_dict = {}
@@ -142,14 +138,8 @@ def get_batch(data_iterator):
         with open(os.environ["DATA_PATH_LOG"], mode='a') as file:
             file.write(f"img: {data_dict['image']}\n")
             file.write(f"label: {data_dict['label']}\n")
-            # TODO: make the print of data ordered by rank
-            # for i in range(dp):
-            #     if rank == i:
-            #         file.write(f"img: {data_dict['image']}\n")
-            #         file.write(f"label: {data_dict['label']}\n")
-            #     dist.barrier(group=dp_group) ## communicate only within the first group.
 
-    data_i = tensor_parallel.broadcast_data(["label"], data_dict, torch.int64) ##TODO: lower precision, will it get angry at me if I set it to 16 or 32? 
+    data_i = tensor_parallel.broadcast_data(["label"], data_dict, torch.int64)
     data_f = tensor_parallel.broadcast_data(["image"], data_dict, img_dtype)
 
     labels = data_i["label"].long().contiguous()
@@ -157,68 +147,6 @@ def get_batch(data_iterator):
 
     return images, labels
 
-# def loss_func(labels, output_tensor):
-#     sp_rank = mpu.get_sequence_parallel_rank()
-#     sp_src_rank = mpu.get_sequence_parallel_src_rank()
-#     # sp_world_size = mpu.get_sequence_parallel_world_size()
-#     sp_group = mpu.get_sequence_parallel_group()
-
-#     logits = output_tensor.contiguous().float()
-#     if sp_rank == 0:
-#         logits = output_tensor.contiguous().float()
-#     else:
-#         logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
-
-#     outputs = torch.argmax(logits, -1)
-#     correct = (outputs == labels).float()
-#     accuracy = torch.mean(correct)
-#     loss = F.cross_entropy(logits, labels)
-    
-#     # print(f"loss {sp_rank}: {loss}", flush=True)
-#     ## only sp_src_rank has first clf token, but why...
-#     # first_token_loss = loss.detach()
-#     # dist.broadcast(tensor=first_token_loss, src=sp_src_rank, group=sp_group)
-#     # dist.broadcast(tensor=accuracy, src=sp_src_rank, group=sp_group)
-#     # averaged_loss = average_losses_across_data_parallel_group([first_token_loss, accuracy])
-
-#     ## Q. Why doesn't the below ruin our loss and acc as they get reduced across by "noise tokens"? (DP vs. SP looks perfect)
-#     averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
-#     return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
-#     # sp_rank = mpu.get_sequence_parallel_rank()
-#     # sp_world_size = mpu.get_sequence_parallel_world_size()
-
-#     # logits = output_tensor.contiguous().float()
-#     # if sp_rank == 0:
-#     #     logits = output_tensor.contiguous().float()
-#     # else:
-#     #     logits = output_tensor.contiguous().float() * 0 ## DROPOUT ALL, cut off gradients
-#     #     ## TODO: Would adding barrier help with saving compute? 
-
-#     # outputs = torch.argmax(logits, -1)
-#     # correct = (outputs == labels).float()
-#     # accuracy = torch.mean(correct)
-#     # if sp_world_size > 1:
-#     #     ## TODO: below will be useful for VIT Auto-encoder
-#     #     # loss = vocab_parallel_cross_entropy(logits.contiguous(), labels, for_vit=True).mean()
-#     #     loss = F.cross_entropy(logits, labels)
-#     # else:
-#     #     ## TODO: Find a way to not do below compute? 
-#     #     loss = F.cross_entropy(logits, labels)
-    
-#     # import os
-#     # debug_mode = 'DEBUG_FNAME' in os.environ
-#     # if debug_mode:
-#     #     debug_fname = os.environ["DEBUG_FNAME"]
-#     #     if sp_rank==0:
-#     #         torch.save(output_tensor, f"{debug_fname}.pt")
-
-#     #     with open(debug_fname, "a") as f:
-#     #         f.write(f"\n[{sp_rank}] output after head: {output_tensor}\n")
-#     #         # f.write(f"\n[{sp_rank}] output after head shape: {output_tensor.shape}\n")
-#     #         f.write(f"\n[{sp_rank}] loss: {loss}\n")
-
-#     # averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
-#     # return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
 
 def loss_func(labels, output_tensor):
     sp_rank = mpu.get_sequence_parallel_rank()
@@ -230,47 +158,6 @@ def loss_func(labels, output_tensor):
     if sp_rank != 0:
         ## DROPOUT ALL, cut off gradients
         loss = loss * 0 
-    ## TODO: Q. Why doesn't the below ruin our loss and acc as they get reduced across by "noise tokens"? (DP vs. SP looks perfect). Maybe the below isn't whats visualized on wandb? 
-    averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
-    return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
-
-
-def forward_step(data_iterator, model):
-    """Forward step."""
-    timers = get_timers()
-
-    # Get the batch.
-    timers("batch-generator", log_level=2).start()
-    (
-        images,
-        labels,
-    ) = get_batch(data_iterator)
-    timers("batch-generator").stop()
-
-    # Forward model. lm_labels
-    output_tensor = model(images)
-
-    return output_tensor, partial(loss_func, labels)
-
-def train_valid_test_datasets_provider(train_val_test_num_samples):
-    """Build train, valid, and test datasets."""
-    args = get_args()
-
-    print_rank_0(
-        "> building train, validation, and test datasets " "for VIT ..."
-    )
-    train_ds, valid_ds = build_train_valid_datasets(
-        data_path=args.data_path,
-        image_size=(args.img_h, args.img_w)
-    )
-    print_rank_0("> finished creating VIT datasets ...")
-
-    return train_ds, valid_ds, None
-
-
-if __name__ == "__main__":
-    ##TODO: What's going on under the hood? Take time to replace it with MPI?  
-    import ezpz as ez
     RANK = ez.setup_torch(backend="deepspeed")#, timeout=72000) ## 20 hours max.
     WORLD_SIZE = ez.get_world_size()
     LOCAL_RANK = ez.get_local_rank()
@@ -279,32 +166,6 @@ if __name__ == "__main__":
     # local_rank = int(os.environ["LOCAL_RANK"])
     if torch.cuda.is_available():
         torch.cuda.set_device(LOCAL_RANK)
-
-    # RANK = comm.Get_rank()
-    # WORLD_SIZE = comm.Get_size()
-    # LOCAL_RANK = RANK % WORLD_SIZE
-    # # torch.distributed.init_process_group(backend="deepspeed")
-    # torch.distributed.init_process_group(backend="deepspeed", init_method="env://", world_size=WORLD_SIZE, rank=RANK)
-    # ##Q. when is the above neccessary? pretrain_gpt for example, doesn't have any torch.distributed.init_process_group
-    # torch.distributed.barrier()
-    # from torchvision import set_image_backend
-    # if "ACCIMAGE" in os.environ:
-    #     set_image_backend("accimage")
-    import time
-    from megatron import get_wandb_writer
-    train_strt = time.time()
-    # try:
-    pretrain(
-        train_valid_test_datasets_provider,
-        model_provider,
-        ModelType.encoder_or_decoder,
-        forward_step,
-        args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
-    )
-    # except Exception as e:
-    #     print_rank_0(f"original error message: {str(e)}")
-    #     ## Will this fix the *** longjmp causes uninitialized stack frame ***: terminated?
-    #     raise KeyboardInterrupt()
 
     dist.barrier() ## prevent accidental saving? 
     print_rank_0(f"tot train time: {time.time() - train_strt}")
@@ -319,58 +180,10 @@ if __name__ == "__main__":
         wandb_writer = get_wandb_writer()
         wandb_writer.log(log_dict, step=args.logger_iteration)
 
-        ## Log results to compare across different runs
-        # if os.environ.get("LOG_RESULTS") == "1":
-        #     import json
-        #     fpath = 'logs/results.json'
-        #     if not os.path.exists(fpath):
-        #         pardir = os.path.dirname(fpath)
-        #         os.makedirs(pardir, exist_ok=True)
-        #         results = {}
-        #     else:
-        #         with open(fpath, mode='r') as file:
-        #             results = json.load(file)
-                
-        #     with open(fpath, mode='w') as file:
-        #         num_nodes = os.environ.get("SIZE", "NA")
-        #         GBS = os.environ.get("GBS", "NA")
-        #         IMG_H = os.environ.get("IMG_H", "NA")
-        #         method = os.environ.get("method", "NA")
-        #         log_dict['GBS'] = GBS
-        #         log_dict['IMG_H'] = IMG_H
-        #         log_dict['method'] = method
-
-        #         if num_nodes not in results:
-        #             results[num_nodes] = [log_dict]
-        #         else:
-        #             results[num_nodes].append(log_dict)
-        #         json.dump(results, file)
-        #         # pprint.pprint(results)
-
-        #     pprint.pprint(log_dict)
         print("Pretrain completed.")
-    # raise KeyboardInterrupt("pretrain completed...")
 
-    # dist.barrier()
-
-    # if os.environ.get("FORCE_QUIT") == "1":
-    #     print_rank_0("FORCE QUITTING...")
-    #     os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
     print_rank_0("switching stderr to /dev/null to prevent endless stream of 'longjmp'")
     import sys
     sys.stderr = open(os.devnull, "w")
-
-    # try:
-    # except RuntimeError as e:
-    #     if "CUDA out of memory" in str(e) or "out of memory" in str(e):
-    #     # if "CUDA out of memory" in str(e):
-    #         print_rank_0("\nCUDA OUT OF MEMORY. Forcefully terminating...\n")
-    #         os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
-    #     else:
-    #         raise
-    # except Exception as e:
-    #     print_rank_0("\nForcefully terminating...\n")
-    #     print(f"\nERROR MESSAGE: {str(e)}\n")
-    #     os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
 
     exit()

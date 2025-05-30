@@ -20,7 +20,6 @@ export drop_last_batch_with_GBS=1
 export GLOBAL_MEAN_POOLING=1
 export WANDB_MODE=disabled
 export POS_ENCODING=1
-# export MICS_SHARD_SIZE=24
 # export PROFILE=1
 export PROF_FLOPS=1
 export LOG_COMMS=1

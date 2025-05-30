@@ -44,8 +44,8 @@ drop_last_batch_with_GBS=1  ## fixes the data order as long as GBS is matching.
 1. Pass either GBS or MBS
 2. Pass either fp16 or bf16
 3. Without ZERO3, only fp16 can be used (for now).
+4. DATA_DIR is just a placeholder and will only be used when using CIFAR dataset (i.e. DATA=CIFAR). For benchmarking only purposes, it can be set to any existing filepath.
 ```
 
 ## Environment
-Only base environment is needed for polaris cluster while for aurora, we employ sam's ezpz library on top of base environment. Thus, a suitable virtual environment (in flare file-system) is activated automatically on aurora. 
-
+Only base environment is needed for polaris cluster while for aurora, sam's ezpz library will be needed on top of the base environment. A suitable virtual environment is activated automatically on aurora.

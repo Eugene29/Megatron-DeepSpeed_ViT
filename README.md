@@ -13,8 +13,8 @@ If not already cloned,
 Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll need to modify `SCRIPT_DIR`. Environment variables not in `mult_mds_*.sh` can be found and configured in `mds_launch.sh`. 
 
 ## For ALCF4 Benchmark:
-- Please run mult_mds_polaris_alcf4.sh
-- Environment variable DATA_DIR is just a placeholder and will only be used when using CIFAR dataset (i.e. DATA=CIFAR). For benchmarking only purposes, it can be set to any existing filepath.
+- Please run `mult_mds_polaris_alcf4.sh`
+- Environment variable `DATA_DIR` is just a placeholder and will only be used when using CIFAR dataset (i.e. `DATA=CIFAR`). For benchmarking only purposes, it can be set to any existing filepath.
 
 ## POSSIBLE ENV VARIABLES
 ```

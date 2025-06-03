@@ -55,4 +55,6 @@ drop_last_batch_with_GBS=1  ## fixes the data order as long as GBS is matching.
 ```
 
 ## Environment
-Only base environment is needed for polaris cluster while for aurora, sam's ezpz library will be needed on top of the base environment. A suitable virtual environment is activated automatically on aurora.
+For polaris cluster, base conda environment is sufficient while for aurora cluster, ezpz and deepspeed will additionally need to be installed. 
+
+For non-ALCF clusters, please checkout `requirements.txt`

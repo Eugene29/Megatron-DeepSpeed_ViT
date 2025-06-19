@@ -13,7 +13,7 @@ Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll n
 
 ## For ALCF4 Benchmark:
 - Please run `mult_mds_polaris_alcf4.sh`
-- Environment variable `DATA_DIR` can be set to any existing filepath as it is just a placeholder when using a toy dataset (i.e. `DATA=TOY`).
+- Environment variable `DATA_DIR` can be set to any existing filepath as it is just a placeholder when using a toy dataset (i.e. `DATA=TOY`). However, the placeholder is necessary to prevent an error.
 - Three places need code changes:
   - Two `#### CUSTOMIZE HERE ####` in `mds_launch.sh`
   - `SCRIPT_PTH` in `mult_mds_polaris_alcf4.sh`

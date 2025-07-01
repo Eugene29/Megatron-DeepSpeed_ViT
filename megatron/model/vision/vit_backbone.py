@@ -41,21 +41,12 @@ class VitMlpHead(MegatronModule):
         self.dense_out = torch.nn.Linear(hidden_size, num_classes)
         torch.nn.init.constant_(self.dense_out.bias, -10)
 
-        ## TODO: Enable TP (But below might be useless if VIT is not an autoencoder)
-        # from megatron.core.tensor_parallel import ColumnParallelLinear
-        # self.dense_in = ColumnParallelLinear(hidden_size, hidden_size, config=config, init_method=config.init_method, gather_output=True, forSP=True)
-        # self.dense_out = ColumnParallelLinear(hidden_size, num_classes, config=config, init_method=config.init_method, gather_output=False, forSP=True)
-
     def forward(self, hidden_states):
         # hidden_states: [b, 1, h]
         # sequence_index: index of the token to pool.
         dense_in_result = self.dense_in(hidden_states)
         tanh_result = torch.tanh(dense_in_result)
         dense_out_result = self.dense_out(tanh_result)
-
-        ## TODO: Enable TP (But below might be useless if VIT is not an autoencoder)
-        # dense_in_result, _ = self.dense_in(hidden_states)
-        # dense_out_result, _ = self.dense_out(tanh_result)
 
         return dense_out_result
 
@@ -67,7 +58,6 @@ def isPerfectSquare(x):
     return False
 
 
-## Q. What is this doing? Hooks? 
 def twod_interpolate_position_embeddings_hook(
     state_dict,
     prefix,
@@ -120,7 +110,7 @@ def twod_interpolate_position_embeddings_hook(
             scale_factor = (gs_new[0] / gs_input, gs_new[1] / gs_input)
 
             input_param_grid = F.interpolate(
-                input_param_grid, scale_factor=scale_factor, mode="bilinear" ## Q. What does bilinear mean again? 
+                input_param_grid, scale_factor=scale_factor, mode="bilinear" 
             )
 
             input_param_grid = input_param_grid.half()
@@ -182,7 +172,7 @@ class VitBackbone(MegatronModule):
             self.num_patches_per_dim_h = self.img_h // self.patch_dim
             self.num_patches_per_dim_w = self.img_w // self.patch_dim
             self.num_patches = self.num_patches_per_dim_h * self.num_patches_per_dim_w
-            self.seq_length = self.num_patches + (CLASS_TOKEN_LENGTH if self.class_token else 0) ## why are you recalcualting seq length if it is required as env variable? 
+            self.seq_length = self.num_patches + (CLASS_TOKEN_LENGTH if self.class_token else 0) 
         else:
             img_d = int(os.environ["IMG_D"]) ## image depth
             assert img_d % self.patch_dim == 0, f"img_d:, {img_d}, patch_dim: {self.patch_dim}"
@@ -196,7 +186,7 @@ class VitBackbone(MegatronModule):
             if not (args.num_attention_heads % sp == 0 and args.num_attention_heads > sp):
                 print("beaware, your head count is invalid (i.e. (head count indivisible by SP) or (SP > head count)")
             assert self.seq_length % sp == 0, "uneven sequence ulysses is not yet implemented."
-            # assert args.num_attention_heads % sp == 0, "Num head is the max sp degree for Ulysses"
+            assert args.num_attention_heads % sp == 0, "Num head is the max sp degree for Ulysses"
 
 
         if self.pre_process:
@@ -216,7 +206,6 @@ class VitBackbone(MegatronModule):
             # Embedding
             self.pos_encoding = args.pos_encoding
             if self.pos_encoding:
-                ## TODO: Understanding the arguments behind pos encoding and optimize it for longer sequences. 
                 def positionalencoding1d(d_model, length, dev):
                     """
                     :param d_model: dimension of the model
@@ -249,7 +238,7 @@ class VitBackbone(MegatronModule):
             self.remainder_seq_len = self.seq_length % sp
 
             ## For pos_encoding, sub_seq_idx need to include clf_token
-            ## For the actual sequence, sub_seq_idx need to eclude clf_token 
+            ## For the actual sequence, sub_seq_idx need to exclude clf_token 
             ## Therefore, reduce the sub_sequence of first rank by 1 for clf token
             ## Cleaner code: reduce redundancy of code below
             if self.remainder_seq_len == 0:
@@ -325,15 +314,9 @@ class VitBackbone(MegatronModule):
             seq_parallel_rank = mpu.get_sequence_parallel_rank()
             if self.ds_sequence_parallel:
                 rearranged_input = rearranged_input[:, self.sub_seq_start:self.sub_seq_end, :] ## b, s, h
-                # print(f"rearranged_input.shape: {rearranged_input.shape}") ## TODO: how did uneven sequence parallelism work beforehand? 
-                ## Q. Don't we need to use sequence_data_parallel instead of sequence_parallel_rank?
-                ## > No, sequence_data_parallel_rank is the rank of both sp + dp groups. 
-            # raise KeyboardInterrupt()
 
-            # assert rearranged_input.dtype == torch.half ## Q. We should be able to use bf16 if we want? 
             encoder_output = self.linear_encoder(rearranged_input)
 
-            ## TODO: think of a way to reduce the number of bools
             if self.class_token and seq_parallel_rank == 0:
                 cls_tokens = self.cls_token.expand(encoder_output.shape[0], -1, -1)
                 concatenated_tokens = torch.cat((cls_tokens, encoder_output), dim=1)
@@ -343,7 +326,7 @@ class VitBackbone(MegatronModule):
             if self.pos_encoding:
                 token_embeddings = concatenated_tokens + self.position_embeddings
             else:
-                ## TODO: When supporting undivisible SP, include clf token in pos encoding while both parallelizing sequence and pos embedding. 
+                ## TODO: When supporting indivisible SP, include clf token in pos encoding while both parallelizing sequence and pos embedding. 
                 token_embeddings = concatenated_tokens + \
                         self.position_embeddings(self.position_ids[:, :concatenated_tokens.shape[1]])
             
@@ -352,16 +335,6 @@ class VitBackbone(MegatronModule):
             hidden_states = self.embedding_dropout(hidden_states) 
         else:
             hidden_states = input
-
-        # if torch.distributed.get_rank() == 0:
-        #     hidden_states = hidden_states[:-1]
-        #     print(f"hidden_states.shape: {hidden_states.shape}")
-        # debug_mode = "DEBUG_FNAME" in os.environ
-        # if debug_mode:
-        #     debug_fname = os.environ["DEBUG_FNAME"]
-        #     with open(debug_fname, "a") as f:
-        #         f.write(f"\n[{mpu.get_sequence_parallel_rank()}] Before Transformer Layers: {hidden_states}\n")
-        #         f.write(f"\n[{mpu.get_sequence_parallel_rank()}] Before Transformer Layers shape: {hidden_states.shape}\n")
 
         hidden_states = self.transformer(hidden_states, None)[0] ## [0] ignore moe losses
 
@@ -377,10 +350,5 @@ class VitBackbone(MegatronModule):
                     ## we are using global mean pool otherwise for now. 
                     ## if not single token, then output the entire embedding. 
                     hidden_states = hidden_states.transpose(0, 1).contiguous()
-
-        # if debug_mode:
-        #     with open(debug_fname, "a") as f:
-        #         f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head: {hidden_states}\n")
-        #         f.write(f"\n [{mpu.get_sequence_parallel_rank()}] First token before MLP_head shape: {hidden_states.shape}\n")
 
         return hidden_states

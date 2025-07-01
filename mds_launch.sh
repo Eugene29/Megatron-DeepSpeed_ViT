@@ -32,47 +32,48 @@ get_machine() {
 get_machine
 
 if [[ $MACHINE == "aurora" ]]; then 
-     WANDB_PROJECT_NAME="AuroraViT"
-     # Below DATA_DIR is just a placeholder and will only be used if DATA is set to CIFAR. For benchmarking only purposes, it can be set to any existing filepath.
-     DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
-     ## env with ezpz, etc.
-     . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
-     FA_VERSION="--use-flash-attn-builder"
-     NGPU_PER_HOST=12
-     set_ccl_vars_on_aurora() {
-          export CCL_KVS_MODE=mpi
-          export CCL_CONFIGURATION_PATH=""
-          export CCL_CONFIGURATION=cpu_gpu_dpcpp
-          export CCL_KVS_CONNECTION_TIMEOUT=3600
+    module load frameworks
+    WANDB_PROJECT_NAME="AuroraViT"
+    # Below DATA_DIR is just a placeholder and will only be used if DATA is set to CIFAR. For benchmarking only purposes, it can be set to any existing filepath.
+    DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
+    ## env with ezpz, etc.
+    . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
+    FA_VERSION="--use-flash-attn-builder"
+    NGPU_PER_HOST=12
+    set_ccl_vars_on_aurora() {
+        export CCL_KVS_MODE=mpi
+        export CCL_CONFIGURATION_PATH=""
+        export CCL_CONFIGURATION=cpu_gpu_dpcpp
+        export CCL_KVS_CONNECTION_TIMEOUT=3600
 
-          export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
-          export CCL_PROCESS_LAUNCHER=pmix # Required by Aurora mpich
-          if [[ $NHOSTS -gt 1 ]]; then
-            ## the following code breaks for node=1
-            export FI_PROVIDER=cxi           # Required by Aurora mpich
-          fi
-          export PALS_PMI=pmix             # Required by Aurora mpich
-          export CCL_ATL_TRANSPORT=mpi     # Required by Aurora mpich
-          export TORCH_LLM_ALLREDUCE=1
-          export CCL_SYCL_ESIMD=1
-          export CCL_ALLGATHERV_MEDIUM_SIZE_THRESHOLD=0 # Required by current oneCCL (MLSL-2881)
-          export CCL_ENABLE_SYCL_KERNELS=1
-          export CCL_WORKER_AFFINITY=5,13,21,29,37,45,57,65,73,81,89,97
-          export CCL_ZE_CACHE_OPEN_IPC_HANDLES_THRESHOLD=32768
-          export FI_CXI_DEFAULT_CQ_SIZE=1048576
-          export FI_CXI_RX_MATCH_MODE=hybrid
+        export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
+        export CCL_PROCESS_LAUNCHER=pmix # Required by Aurora mpich
+        if [[ $NHOSTS -gt 1 ]]; then
+        ## the following code breaks for node=1
+        export FI_PROVIDER=cxi           # Required by Aurora mpich
+        fi
+        export PALS_PMI=pmix             # Required by Aurora mpich
+        export CCL_ATL_TRANSPORT=mpi     # Required by Aurora mpich
+        export TORCH_LLM_ALLREDUCE=1
+        export CCL_SYCL_ESIMD=1
+        export CCL_ALLGATHERV_MEDIUM_SIZE_THRESHOLD=0 # Required by current oneCCL (MLSL-2881)
+        export CCL_ENABLE_SYCL_KERNELS=1
+        export CCL_WORKER_AFFINITY=5,13,21,29,37,45,57,65,73,81,89,97
+        export CCL_ZE_CACHE_OPEN_IPC_HANDLES_THRESHOLD=32768
+        export FI_CXI_DEFAULT_CQ_SIZE=1048576
+        export FI_CXI_RX_MATCH_MODE=hybrid
 
-          export CCL_ALLGATHERV=topo
-          export CCL_ALLREDUCE=topo
-          #  export CCL_BCAST=double_tree
-          export CCL_BARRIER=ring
-          export CCL_ALLREDUCE_SCALEOUT=ring
-          #  export CCL_ALLREDUCE_SCALEOUT=rabenseifener
-          export CCL_ALLGATHER_SCALEOUT=ring
-          export CCL_ALLGATHERV_SCALEOUT=ring
-     }
+        export CCL_ALLGATHERV=topo
+        export CCL_ALLREDUCE=topo
+        #  export CCL_BCAST=double_tree
+        export CCL_BARRIER=ring
+        export CCL_ALLREDUCE_SCALEOUT=ring
+        #  export CCL_ALLREDUCE_SCALEOUT=rabenseifener
+        export CCL_ALLGATHER_SCALEOUT=ring
+        export CCL_ALLGATHERV_SCALEOUT=ring
+    }
 
-     set_ccl_vars_on_aurora2() {
+    set_ccl_vars_on_aurora2() {
         export CCL_KVS_MODE=mpi
         export CCL_KVS_CONNECTION_TIMEOUT=600 
         export PALS_PMI=pmix
@@ -83,12 +84,13 @@ if [[ $MACHINE == "aurora" ]]; then
         export CCL_ATL_SYNC_COLL=1
         export CCL_OP_SYNC=1
         export CCL_ENABLE_AUTO_CACHE=0
-        export CCL_ZE_CACHE_OPEN_IPC_HANDLES_THRESHOLD=4096
+        export CCL_ZE_CACHE_OPEN_IPC_HANDLES_THRESHOLD=$((4096 * 8))
 
-        export CCL_ALLREDUCE=topo
-        export CCL_ALLGATHERV=direct
+        export CCL_ALLGATHERV=topo # direct
+        export CCL_ALLGATHERV_SCALEOUT=ring
         export CCL_ALLGATHERV_MEDIUM_SIZE_THRESHOLD=0
-        export CCL_ALLREDUCE_SCALEOUT=direct
+        export CCL_ALLREDUCE=topo
+        export CCL_ALLREDUCE_SCALEOUT=ring
         export CCL_BCAST=double_tree
 
         export FI_CXI_DEFAULT_CQ_SIZE=1048576
@@ -104,33 +106,33 @@ if [[ $MACHINE == "aurora" ]]; then
 
         export PALS_PING_PERIOD=480
         export PALS_RPC_TIMEOUT=480
-     }
-     set_ccl_vars_on_aurora2
+    }
+    set_ccl_vars_on_aurora2
 
 elif [[ $MACHINE == "polaris" ]]; then 
-     module load conda
-     conda activate
+    module load conda
+    conda activate
 
-     export AWS_DIR=/soft/libraries/aws-ofi-nccl/v1.6.0/
-     export NCCL_NET_GDR_LEVEL=PHB
-     export NCCL_CROSS_NIC=1
-     export NCCL_COLLNET_ENABLE=1
-     export NCCL_SOCKET_IFNAME=hsn
-     export NCCL_NET="AWS Libfabric"
-     export LD_LIBRARY_PATH=$AWS_DIR/lib:$LD_LIBRARY_PATH
-     export LD_LIBRARY_PATH=/soft/libraries/hwloc/lib/:$LD_LIBRARY_PATH
+    export AWS_DIR=/soft/libraries/aws-ofi-nccl/v1.6.0/
+    export NCCL_NET_GDR_LEVEL=PHB
+    export NCCL_CROSS_NIC=1
+    export NCCL_COLLNET_ENABLE=1
+    export NCCL_SOCKET_IFNAME=hsn
+    export NCCL_NET="AWS Libfabric"
+    export LD_LIBRARY_PATH=$AWS_DIR/lib:$LD_LIBRARY_PATH
+    export LD_LIBRARY_PATH=/soft/libraries/hwloc/lib/:$LD_LIBRARY_PATH
 
-     export FI_CXI_DISABLE_HOST_REGISTER=1
-     export FI_MR_CACHE_MONITOR=userfaultfd
-     export FI_CXI_DEFAULT_CQ_SIZE=131072
-     export FI_CXI_DEFAULT_TX_SIZE=131072
-     export FI_CXI_RDZV_PROTO=alt_read
-     export FI_CXI_RX_MATCH_MODE=software
-     export FI_CXI_REQ_BUF_SIZE=16MB
+    export FI_CXI_DISABLE_HOST_REGISTER=1
+    export FI_MR_CACHE_MONITOR=userfaultfd
+    export FI_CXI_DEFAULT_CQ_SIZE=131072
+    export FI_CXI_DEFAULT_TX_SIZE=131072
+    export FI_CXI_RDZV_PROTO=alt_read
+    export FI_CXI_RX_MATCH_MODE=software
+    export FI_CXI_REQ_BUF_SIZE=16MB
 
-     export FI_CXI_RDZV_GET_MIN=0
-     export FI_CXI_SAFE_DEVMEM_COPY_THRESHOLD=16000
-     export FI_CXI_RDZV_THRESHOLD=2000
+    export FI_CXI_RDZV_GET_MIN=0
+    export FI_CXI_SAFE_DEVMEM_COPY_THRESHOLD=16000
+    export FI_CXI_RDZV_THRESHOLD=2000
 
      WANDB_PROJECT_NAME="PolarisViT"
      DATA_DIR="/eagle/datascience/eku/data"
@@ -158,6 +160,11 @@ WORKING_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
 # cd $WORKING_DIR
 # YUNCHANG="${WORKING_DIR}/long-context-attention" ## Custom yunchang (USP)
 # PYTHONPATH="${DEEPSPEED}:${YUNCHANG}:${PYTHONPATH}"
+# if [[ $MICS_SHARD_SIZE -gt 1 ]]; then
+#     # Custom DeepSpeed with MICS fix
+#     PYTHONPATH="/lus/flare/projects/Aurora_deployment/eku/tests/test_MICS/MDS-MICS/deps:${PYTHONPATH}"
+# fi
+
 export PYTHONPATH="${WORKING_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## HOST NODE
 export MASTER_ADDR=$(hostname)
@@ -285,9 +292,10 @@ fi
 export ZERO=${ZERO:-0}
 export hpz=${hpz:-1}
 mics_ds_config=""
+internode_MICS=false  # 
 if [[ $MICS_SHARD_SIZE ]]; then
     mics_ds_config="
-    \"mics_hierarchical_params_gather\": true,
+    \"mics_hierarchical_params_gather\": $internode_MICS,
     \"mics_shard_size\": $MICS_SHARD_SIZE,"
 fi
 
@@ -346,6 +354,7 @@ if [[ $LOG_COMMS -eq 1 ]]; then
 fi
 
 ## DS CONFIG
+[[ $machine == "Aurora" ]] && overlap_comm=false || overlap_comm=true
 cat <<EOF > "$WORKING_DIR/$DS_CONFIG_FNAME"
 {
     "train_batch_size": $GBS,
@@ -354,7 +363,7 @@ cat <<EOF > "$WORKING_DIR/$DS_CONFIG_FNAME"
 
     "zero_optimization": {
         "stage": $ZERO,
-        "overlap_comm": true,
+        "overlap_comm": $overlap_comm,
         "zero_hpz_partition_size": $hpz,
         $mics_ds_config
         "contiguous_gradients": true
@@ -741,8 +750,9 @@ fi
 echo "Launching mpiexec."
 nsys=""
 if [[ $MACHINE == "aurora" ]]; then
+    cpu_bind_list=""
     run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} \
-        --hostfile ${PBS_NODEFILE} --cpu-bind depth -d 16 \
+        --hostfile ${PBS_NODEFILE} --cpu-bind=$CPU_BIND \
         $nsys python \
         ${WORKING_DIR}/${pretrain_script}_ezpz.py \
         ${CLASSIFIER_ARGS} \
@@ -764,7 +774,7 @@ elif [[ $MACHINE == "polaris" ]]; then
           ${DS_ARGS}"
 else
      #### CUSTOMIZE HERE ####
-     echo "unknown machine. Opting for mpiexec + torchrun to execute multi-gpu/node program. May need to temper run_cmd for functionality/performance";
+     echo "unknown machine. Opting for mpiexec + torchrun to execute multi-gpu/node program. May need to temper run_cmd for functionality + performance";
      export RDZV_HOST=$(hostname)
      export RDZV_PORT=$RANDOM
      run_cmd="mpiexec --verbose --envall -n ${NHOSTS} -ppn 1 --cpu-bind depth -d ${NGPUS} \

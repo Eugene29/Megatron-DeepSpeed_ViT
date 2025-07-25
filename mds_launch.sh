@@ -37,7 +37,7 @@ if [[ $MACHINE == "aurora" ]]; then
     # Below DATA_DIR is just a placeholder and will only be used if DATA is set to CIFAR. For benchmarking only purposes, it can be set to any existing filepath.
     DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
     ## env with ezpz, etc.
-    . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
+    # . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
     FA_VERSION="--use-flash-attn-builder"
     NGPU_PER_HOST=12
     set_ccl_vars_on_aurora() {
@@ -168,7 +168,7 @@ WORKING_DIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
 export PYTHONPATH="${WORKING_DIR}:${PYTHONPATH}" ## Add local megatron path
 ## HOST NODE
 export MASTER_ADDR=$(hostname)
-export MASTER_PORT=6000
+export MASTER_PORT=$((RANDOM + 1024))
 
 ## LIMIT GPUs VISIBLE (FOR 1-NODE EXPERIMENTS)
 if [ ${SIZE:-"-1"} -eq 1 ]; then
@@ -418,6 +418,11 @@ elif [[ $VIT == "LARGE+" ]]; then
     HSIZE=1032
     FFN_HSIZE=4096
     NUM_HEADS=24
+elif [[ $VIT == "315M" ]]; then
+    NLAYERS=14
+    HSIZE=1536
+    FFN_HSIZE=4096
+    NUM_HEADS=12
 elif [[ $VIT == "LARGE++" ]]; then
     ## VIT-LARGE (320M)
     NLAYERS=24

@@ -282,7 +282,7 @@ class CoreAttention(MegatronModule):
         # ===================================
         # Raw attention scores. [b, np, s, s]
         # ===================================
-        correct_output_shape = query_layer.shape
+
         # [b, np, sq, sk]
         output_size = (query_layer.size(1),
                        query_layer.size(2),
@@ -401,22 +401,6 @@ class FlashSelfAttention(torch.nn.Module):
             self.flash_attn_func = flash_attn_varlen_func if args.use_flash_attn_v2 else flash_attn_unpadded_func
             self.use_flash_attn = True
 
-    ## Q. Slower flash attention. Why is it slower? Shouldn't basic flash_attn_func be faster than the variable-length one? 
-    # def forward(self, q, k, v):
-    #     from flash_attn import flash_attn_func
-    #     out_ref, _, _ = flash_attn_func(
-    #         q,
-    #         k,
-    #         v,
-    #         dropout_p=self.dropout_p,
-    #         causal=self.causal,
-    #         window_size=(-1, -1),
-    #         alibi_slopes=None,
-    #         deterministic=True,
-    #         return_attn_probs=True,
-    #     )
-    #     return out_ref
-    
     def forward(self, q, k, v):
         """Implements the multihead softmax attention.
         Arguments
@@ -609,12 +593,8 @@ class ParallelAttention(MegatronModule):
                 bias=config.add_bias_linear,
                 gather_output=False)
 
-        # Currently FlashAttention only works with causal mask
-        self.causal = args.vision_backbone_type == "None" ## TODO: Double check that this is none when using LLMs. Should be args.vision_training instead...
-        # print(f"causal is set to: {self.causal}")
-        if args.USP_ring or args.USP_hybrid:
-            pass
-        elif self.use_flash_attn_triton:
+        self.causal = args.vision_backbone_type == "None"
+        if self.use_flash_attn_triton:
             local_attn = FlashSelfAttentionTriton(causal=self.causal, attention_dropout=args.attention_dropout)
         elif self.use_flash_attn:
             local_attn = FlashSelfAttention(causal=self.causal, attention_dropout=config.attention_dropout)
@@ -623,46 +603,14 @@ class ParallelAttention(MegatronModule):
 
         self.enable_ds_sequence_parallel = parallel_state.get_sequence_parallel_world_size() > 1 \
                                            or args.force_ds_sequence_parallel
-        
         if self.enable_ds_sequence_parallel:
-            ## Do we need custom asserts for USP or do they take care of invalid configurations? 
-            if args.USP_ulysses:
-                ## Ulysses only
-                sp_pg = mpu.get_sequence_parallel_group()
-                if "PACKED" in os.environ:
-                    from yunchang import PackedUlyssesAttention
-                    is_5D = os.environ["PACKED"] == "5D"
-                    self.dist_attn = PackedUlyssesAttention(local_attn=local_attn, is_5D=is_5D, sequence_process_group=sp_pg, use_fa=args.use_flash_attn)
-                else:
-                    from yunchang import UlyssesAttention
-                    self.dist_attn = UlyssesAttention(local_attn=local_attn, sequence_process_group=sp_pg, use_fa=args.use_flash_attn)
-            elif args.USP_ring:
-                from yunchang import ring_flash_attn_func
-                ## Just a function 
-                self.dist_attn = ring_flash_attn_func
-            elif args.USP_hybrid:
-                ## TODO: add how to pass ring and ulysses degree.
-                # from yunchang import AsyncLongContextAttention ## TODO: Async doesn't have backward implemented yet.
-                from yunchang import LongContextAttention, set_seq_parallel_pg
-                sp_pg = mpu.get_sequence_parallel_group()
-                sp_size = mpu.get_sequence_parallel_world_size()
-                rank = mpu.get_sequence_data_parallel_rank()
-                world_size = torch.cuda.device_count()
-                ## Q. Where is FA argument? 
-                ## A. Always use FA as Ring-Attention is an extension of FA
-                ## Q. What is use_ulysses_low? What will be the inner SP? 
-                USP_degree = int(sp_size**0.5)
-                set_seq_parallel_pg(sp_ulysses_degree=sp_size, sp_ring_degree=1, rank=rank, world_size=world_size, use_ulysses_low=False)
-                # self.dist_attn = AsyncLongContextAttention(ring_impl_type="basic")
-                self.dist_attn = LongContextAttention(ring_impl_type="basic")
-            else:
-                assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
-                # assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0 ## No longer needed with Deepspeed udpate
-                self.dist_attn = DistributedAttention(
-                    local_attn, 
-                    parallel_state.get_sequence_parallel_group(), ## group that needs to communicate together. (if 1, then it communicates with other devices in 1)
-                    gather_idx=1 if (args.use_flash_attn_v1 or args.use_flash_attn_v2 or args.use_flash_attn_builder)
-                    else 0) 
+            assert dist_attn_supported, 'Distributed attention is not supported in this DeepSpeed version'
+            # assert args.num_attention_heads % parallel_state.get_sequence_parallel_world_size() == 0 ## No longer needed with Deepspeed udpate
+            self.dist_attn = DistributedAttention(
+                local_attn, 
+                parallel_state.get_sequence_parallel_group(),
+                gather_idx=1 if (args.use_flash_attn_v1 or args.use_flash_attn_v2 or args.use_flash_attn_builder)
+                else 0) 
                 # flash_attn_cuda assumes [b, s, nh, hd] layout, we need to make sure all2all gathers into the correct sequence dimension.
         else:
             if self.use_flash_attn:
@@ -746,7 +694,6 @@ class ParallelAttention(MegatronModule):
         # Pre-allocate memory for key-values for inference.
         # =================================================
         is_first_step = False
-        ##NOTE: Likely causing the issue?? A lot of code here that could go wrong? But its FA specific??
         if inference_params:
             if self.layer_number not in inference_params.key_value_memory_dict:
                 inf_max_seq_len = inference_params.max_sequence_len
@@ -874,40 +821,7 @@ class ParallelAttention(MegatronModule):
             # otherwise, only relative positional embedding takes effect
             # value_layer = apply_rotary_pos_emb(value_layer, k_pos_emb)
 
-        # import time
-        # torch.xpu.synchronize()
-        # strt = time.time()
-        args = get_args()
         if self.enable_ds_sequence_parallel:
-            if args.USP_ring:
-                query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous() for x in (query_layer, key_layer, value_layer)]
-                context_layer = self.dist_attn(
-                    query_layer,
-                    key_layer,
-                    value_layer,
-                    dropout_p=args.attention_dropout,
-                    causal=self.causal,
-                    window_size=(-1, -1),
-                    alibi_slopes=None,
-                    # deterministic=True, ## False by default
-                    return_attn_probs=False,
-                    group=mpu.get_sequence_parallel_group(),
-                )
-            elif args.USP_ulysses or args.USP_hybrid:
-                query_layer, key_layer, value_layer = [rearrange(x, 's b ... -> b s ...').contiguous() for x in (query_layer, key_layer, value_layer)]
-                context_layer = self.dist_attn(
-                    query_layer,
-                    key_layer,
-                    value_layer,
-                    dropout_p=args.attention_dropout,
-                    causal=self.causal,
-                    window_size=(-1, -1),
-                    alibi_slopes=None,
-                    # deterministic=True, ## False by default
-                    return_attn_probs=False,
-                )
-            elif not args.use_unifiedSP:
-                ## Deepspeed Ulysses (FA)
                 batch_dim_idx = 1
                 if self.use_flash_attn:
                     if not self.use_flash_attn_triton:
@@ -944,23 +858,10 @@ class ParallelAttention(MegatronModule):
                 else:
                     context_layer = self.core_attention(
                         query_layer, key_layer, value_layer, attention_mask)
-        # torch.xpu.synchronize()
-        # end = time.time()
-        # time_taken = end - strt
-        # B = args.global_batch_size
-        # s = args.seq_length
-        # h = args.hidden_size
-        # world_size = args.world_size
-        # Tflops = 4 * B * s**2 * h / 1e12 ## QK^T, (NxN) @ V
-        # print(f"FA time taken (including comm): {time_taken}", flush=True)
-        # print(f"FA Tflops per tile: {Tflops/time_taken/world_size}", flush=True)
 
         # =================
         # Output. [sq, b, h]
         # =================
-        
-        if args.use_unifiedSP and self.enable_ds_sequence_parallel:
-            context_layer = rearrange(context_layer, ("b s hc hd -> s b (hc hd)")).contiguous() ## TODO: unnecessary transpose of s b -> b s then b s -> s b.
 
         output, bias = self.dense(context_layer)
 
@@ -1362,10 +1263,6 @@ class ParallelTransformerLayer(MegatronModule):
         # Layer norm at the beginning of the transformer layer.
         layernorm_output = self.input_layernorm(hidden_states)
 
-        import os
-        debug_mode = 'DEBUG_FNAME' in os.environ
-        seq_rank = mpu.get_sequence_parallel_rank()
-
         # Self attention.
         attention_output, attention_bias = \
             self.self_attention(
@@ -1373,15 +1270,6 @@ class ParallelTransformerLayer(MegatronModule):
                 attention_mask,
                 inference_params=inference_params,
                 rotary_pos_emb=rotary_pos_emb)
-        # import time
-        # torch.xpu.synchronize()
-        # strt = time.time()
-        if debug_mode:
-            debug_fname = os.environ['DEBUG_FNAME']
-            with open(debug_fname, "a") as f:
-                f.write(f"\n\n\n\n")
-                f.write(f"[{seq_rank}, l={self.layer_number}] Layernorm output: {layernorm_output}\n")
-                f.write(f"[{seq_rank}, l={self.layer_number}] Layernorm output shape: {layernorm_output.shape}\n")
 
         # Residual connection.
         if self.apply_residual_connection_post_layernorm:
@@ -1460,9 +1348,7 @@ class ParallelTransformerLayer(MegatronModule):
             mlp_output, mlp_bias = self.mlp(layernorm_output)
         else:
             mlp_output, moe_loss, _ = self.mlp(layernorm_output)
-        mlp_output = layernorm_output
-        mlp_bias = None
-
+        
         # when aggregated_moe_loss received, returned moe_loss is the aggregated moe loss
         if aggregated_moe_loss is not None:
             moe_loss += aggregated_moe_loss
@@ -1501,18 +1387,6 @@ class ParallelTransformerLayer(MegatronModule):
                                               training=self.training)
             output = residual + self.drop_path(out)
 
-        if debug_mode:
-            with open(debug_fname, "a") as f:
-                f.write(f"\n\n\n\n")
-                f.write(f"[{seq_rank}] post_attention_layernorm_output: {layernorm_output}") # post_attention_layernorm(layernorm_input)
-                f.write(f"[{seq_rank}] layernorm_input: {layernorm_input}")
-                f.write(f"[{seq_rank}] mlp_bias: {mlp_bias}")
-                f.write(f"[{seq_rank}] mlp_output: {mlp_output}")
-                f.write(f"[{seq_rank}] output: {output}")
-
-        # torch.xpu.synchronize()
-        # end = time.time()
-        # print(f"end - strt: {end - strt}", flush=True)
         if self.layer_type == LayerType.retro_decoder_with_retriever:
             return output, retriever_output, moe_loss
         else:

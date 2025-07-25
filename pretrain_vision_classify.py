@@ -11,22 +11,19 @@ from megatron.core import parallel_state as mpu, tensor_parallel
 from megatron.data.vit_dataset import build_train_valid_datasets
 from megatron.model.vision.classification import VitClassificationModel
 from megatron.model.vision.classification import MitClassificationModel
-from megatron.core.tensor_parallel.cross_entropy import vocab_parallel_cross_entropy
 from megatron.training import pretrain
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.arguments import core_transformer_config_from_args
 import deepspeed
 import os
-# from deepspeed.runtime.utils import see_memory_usage
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
 
     args = get_args()
     config = core_transformer_config_from_args(args)
-    # see_memory_usage(f"Before Building Model", force=True)
 
-    ##TODO: enable PP here?
+    ##TODO: enable PP for VIT
     if hasattr(mpu, 'get_sequence_data_parallel_group'):
         dpg = mpu.get_sequence_data_parallel_group()
     elif hasattr(mpu, 'get_data_parallel_group'):
@@ -57,7 +54,6 @@ def model_provider(pre_process=True, post_process=True):
         else:
             raise Exception('{} vision backbone is not supported.'.format(
                                 args.vision_backbone_type))
-    # see_memory_usage(f"After Building Model", force=True)
     return model
 
 
@@ -142,9 +138,9 @@ def get_batch(data_iterator):
 
 def loss_func(labels, output_tensor):
     sp_rank = mpu.get_sequence_parallel_rank()
-    sp_src_rank = mpu.get_sequence_parallel_src_rank()
+    # sp_src_rank = mpu.get_sequence_parallel_src_rank()
     # sp_world_size = mpu.get_sequence_parallel_world_size()
-    sp_group = mpu.get_sequence_parallel_group()
+    # sp_group = mpu.get_sequence_parallel_group()
 
     logits = output_tensor.contiguous().float()
     if sp_rank == 0:
@@ -158,7 +154,9 @@ def loss_func(labels, output_tensor):
     loss = F.cross_entropy(logits, labels)
     
     averaged_loss = average_losses_across_data_parallel_group([loss, accuracy])
+
     return loss, {"loss": averaged_loss[0], "accuracy": averaged_loss[1]}
+
 
 def forward_step(data_iterator, model):
     """Forward step."""
@@ -194,41 +192,12 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
 
 if __name__ == "__main__":
-    import time
-    from megatron import get_wandb_writer
-    train_strt = time.time()
-    try:
-        pretrain(
-            train_valid_test_datasets_provider,
-            model_provider,
-            ModelType.encoder_or_decoder,
-            forward_step,
-            args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
-        )
-    except RuntimeError as e:
-        ## Forcefully kill processes. Helps quickly end runs, at least on polaris
-        if "longjmp causes uninitialized stack frame" in str(e):
-            print_rank_0("\longjmp(?) error. Forcefully terminating...\n")
-            print_rank_0(f"Original error message was: {str(e)}")
-        elif "CUDA out of memory" in str(e) or "out of memory" in str(e):
-            print_rank_0("\nCUDA OUT OF MEMORY. Forcefully terminating...\n")
-            print_rank_0(f"Original error message was: {str(e)}")
-        else:
-            raise
 
-        os.system("kill $(ps aux | grep mpiexec | grep -v grep | awk '{print $2}')")
-    dist.barrier()
-    print_rank_0(f"tot train time: {time.time() - train_strt}")
-
-    if dist.get_rank() == 0:
-        import pprint
-        args = get_args()
-        log_keys = [ "iteration", "time", "LLM_TFLOPS", "TFLOPS", "TFLOPS_per_gpu", "samples_per_sec", "memory_fpt(GiB)" ]
-        log_dict = {k:getattr(args, k) for k in log_keys}
-        log_dict["num_params"] = os.environ.get("NUM_PARAMS", "NA")
-        log_dict["model_size"] = os.environ.get("VIT", "NA")
-        wandb_writer = get_wandb_writer()
-        wandb_writer.log(log_dict, step=args.logger_iteration)
-
-        print("Pretrain completed.", flush=True)
+    pretrain(
+        train_valid_test_datasets_provider,
+        model_provider,
+        ModelType.encoder_or_decoder,
+        forward_step,
+        args_defaults={'dataloader_type': 'cyclic', 'vision_pretraining': True}
+    )
     exit()

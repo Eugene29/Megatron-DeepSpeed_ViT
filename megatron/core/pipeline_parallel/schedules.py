@@ -344,15 +344,11 @@ def forward_backward_no_pipelining(*,
 
     forward_data_store = []
     input_tensor, output_tensor_grad = None, None
-    # from megatron.core.parallel_state import get_sequence_parallel_rank as get_seq_rank, get_sequence_parallel_group as get_seq_group
-    # seq_rank = get_seq_rank()
     with no_sync_func():
         for i in range(num_microbatches - 1):
             output_tensor = forward_step(forward_step_func, data_iterator, model, num_microbatches,
                                          input_tensor, forward_data_store, config, collect_non_loss_data)
-            # if not forward_only and seq_rank == 0:
             if not forward_only:
-                # print("it's doing some backpropagation")
                 backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config, model)
     if args.deepspeed:
         model.set_gradient_accumulation_boundary(True)
@@ -362,13 +358,8 @@ def forward_backward_no_pipelining(*,
     output_tensor = forward_step(forward_step_func, data_iterator, model, num_microbatches,
                                  input_tensor, forward_data_store, config, collect_non_loss_data)
 
-    # torch.distributed.barrier(group=get_seq_group())
-    ## TODO: add the below code back
-    # if not forward_only and seq_rank == 0:
     if not forward_only:
         backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, config, model)
-    # torch.distributed.barrier(group=get_seq_group())
-    # torch.distributed.barrier()
 
     return forward_data_store
 

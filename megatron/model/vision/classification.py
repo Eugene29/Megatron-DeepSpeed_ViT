@@ -51,29 +51,17 @@ class VitClassificationModel(MegatronModule):
     def forward(self, input):
         hidden_states = self.backbone(input)
 
-        ## Only rank==0 has hidden_states
-        # if self.post_process and hidden_states is not None:
-        # from megatron.core.parallel_state import get_sequence_parallel_rank as get_seq_rank
-        # seq_rank = get_seq_rank()
-        # if self.post_process and seq_rank == 0:
         if self.post_process:
             hidden_states = self.head(hidden_states)
-        # else:
-        #     hidden_states = 0
 
-        # import os
-        # debug_fname = os.environ['DEBUG_FNAME']
-        # if torch.distributed.get_rank()==0:
-        #     with open(debug_fname, "a") as f:
-        #         f.write(f"Final output: {hidden_states}\n")
-        #         f.write(f"Final output shape: {hidden_states.shape}\n")
         return hidden_states
 
 
 class MitClassificationModel(MegatronModule):
     """Mix vision Transformer Model."""
 
-    def __init__(self, num_classes, pre_process=True, post_process=True):
+    def __init__(self, num_classes,
+                 pre_process=True, post_process=True):
         super(MitClassificationModel, self).__init__()
         args = get_args()
 

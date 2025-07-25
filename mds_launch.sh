@@ -37,7 +37,7 @@ if [[ $MACHINE == "aurora" ]]; then
     # Below DATA_DIR is just a placeholder and will only be used if DATA is set to CIFAR. For benchmarking only purposes, it can be set to any existing filepath.
     DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
     ## env with ezpz, etc.
-    # . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
+    . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
     FA_VERSION="--use-flash-attn-builder"
     NGPU_PER_HOST=12
     set_ccl_vars_on_aurora() {

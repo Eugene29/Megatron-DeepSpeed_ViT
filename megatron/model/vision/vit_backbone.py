@@ -12,9 +12,9 @@ import torch.nn.functional as F
 from megatron import get_args
 from megatron.model.transformer import ParallelTransformer
 from megatron.model.utils import (
-    # get_linear_layer,
+    get_linear_layer,
     init_method_normal,
-    # scaled_init_method_normal,
+    scaled_init_method_normal,
 )
 from deepspeed import comm as dist
 from megatron.core import parallel_state as mpu
@@ -47,7 +47,6 @@ class VitMlpHead(MegatronModule):
         dense_in_result = self.dense_in(hidden_states)
         tanh_result = torch.tanh(dense_in_result)
         dense_out_result = self.dense_out(tanh_result)
-
         return dense_out_result
 
 
@@ -110,7 +109,7 @@ def twod_interpolate_position_embeddings_hook(
             scale_factor = (gs_new[0] / gs_input, gs_new[1] / gs_input)
 
             input_param_grid = F.interpolate(
-                input_param_grid, scale_factor=scale_factor, mode="bilinear" 
+                input_param_grid, scale_factor=scale_factor, mode="bilinear"
             )
 
             input_param_grid = input_param_grid.half()
@@ -270,14 +269,6 @@ class VitBackbone(MegatronModule):
                 )
 
             self.embedding_dropout = torch.nn.Dropout(args.hidden_dropout)
-            # Dropout.
-            # if self.sequence_parallel:
-            #     # already partition sequence, do not need scatter_to_sequence_parallel_region
-            #     # embeddings = tensor_parallel.scatter_to_sequence_parallel_region(embeddings)
-            #     # already partition sequence, do not need scatter_to_sequence_parallel_region ?
-            #     embeddings = tensor_parallel.scatter_to_sequence_parallel_region(embeddings)
-            #     with tensor_parallel.get_cuda_rng_tracker().fork():
-            #         embeddings = self.embedding_dropout(embeddings)
 
         # Transformer
         self.transformer = ParallelTransformer(
@@ -352,3 +343,4 @@ class VitBackbone(MegatronModule):
                     hidden_states = hidden_states.transpose(0, 1).contiguous()
 
         return hidden_states
+

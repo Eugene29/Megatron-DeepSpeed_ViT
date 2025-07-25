@@ -54,11 +54,6 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     parser = deepspeed.add_config_arguments(parser)
     parser.add_argument('--use-MICS', action='store_true', help='enable MICS')
     parser.add_argument('--use-toy-data', action='store_true', help='use toy dataset')
-    parser.add_argument('--use-swin', action='store_true', help='use swin model')
-    parser.add_argument('--swin-window2image-ratio', type=int, default=4, \
-                        help='swin model window to image ratio')
-    parser.add_argument('--swin-window-size', type=int, default=4, \
-                        help='swin model window size (in patches)')
 
     # Parse.
     if ignore_unknown_args:
@@ -73,11 +68,6 @@ def parse_args(extra_args_provider=None, ignore_unknown_args=False):
     args.rank = int(os.getenv('RANK', '0'))
     args.world_size = int(os.getenv("WORLD_SIZE", '1'))
     args.pos_encoding = os.getenv('POS_ENCODING', 0)
-    ## TODO: unify below args under one string variable?
-    args.USP_ulysses = os.getenv('USP_ulysses', 0)
-    args.USP_ring = os.getenv('USP_ring', 0)
-    args.USP_hybrid = os.getenv('USP_hybrid', 0)
-    args.use_unifiedSP = args.USP_ulysses or args.USP_ring or args.USP_hybrid
 
     return args
 
@@ -107,6 +97,9 @@ def validate_args(args, defaults={}):
     if args.no_pipeline_parallel:
         assert args.pipeline_model_parallel_size == 1, \
             "pipeline_model_parallel_size must be 1 if pipeline parallel is disabled"
+        
+    if args.ds_sequence_parallel_size > 1:
+        assert version.parse(deepspeed.__version__) >= version.parse("0.10.2"), "sequence parallelism requires DeepSpeed version 0.10.2+"
         
     model_parallel_size = args.pipeline_model_parallel_size * \
                           args.tensor_model_parallel_size * \

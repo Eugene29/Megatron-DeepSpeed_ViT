@@ -21,10 +21,10 @@ export FA=1
 export MBS=1
 
 ################################# FOM RUNS #################################
-export DATA=TOY; export VIT="LARGE"; 
+export DATA=TOY; export VIT="315M"; 
 
-export factor=64; # 4K sequence
-SP=1 NUM_ITERS=5 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
+# export factor=64; # 4K sequence
+# SP=1 NUM_ITERS=5 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log
 
 export factor=128; # 16K sequence
 SP=1 NUM_ITERS=5 bash $MAIN_SCRIPT |& tee $LOGDIR/n${num_node}_factor${factor}.log

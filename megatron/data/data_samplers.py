@@ -150,9 +150,9 @@ class MegatronPretrainingRandomSampler:
         return self.total_samples
 
     def __iter__(self):
-        active_total_samples = self.total_samples - self.last_batch_size ## discard last batch_size?
+        active_total_samples = self.total_samples - self.last_batch_size
         self.epoch = self.consumed_samples // active_total_samples
-        current_epoch_samples = self.consumed_samples % active_total_samples ## samples consumed in current epoch
+        current_epoch_samples = self.consumed_samples % active_total_samples
         assert current_epoch_samples % self.micro_batch_times_data_parallel_size == 0
 
         if isinstance(self.dataset, RandomSeedDataset):
@@ -183,17 +183,7 @@ class MegatronPretrainingRandomSampler:
             idx_range_total = \
                 torch.randperm(full_bucket_size, generator=g).tolist()
             idx_range_active = idx_range_total[full_bucket_offset:]
-            # with open("/tmp/idx_range_active2.txt", mode="w") as file:
-            #     file.write(str(idx_range_active))
             idx_range = idx_range_active[self.data_parallel_rank::self.data_parallel_size]
-
-        ## Q. What is torch.randperm doing?
-        ## > randperm here creates a iterator that produces indices. This order stays constant if the bucket_size is the same. 
-        ## Q. is current_epoch_samples constant at least for VIT?
-        ## > Should be if your not checkpointing. 
-        ## NOTE: If MBS is different then full_bucket_size will be different. 
-        ## This means that idx_range or your data file order will also be different.
-        ## You can avoid the difference in data file order through drop_last_batch_with_GBS
 
         batch = []
         # Last batch if not complete will be dropped.

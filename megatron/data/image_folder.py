@@ -32,7 +32,6 @@
 # https://github.com/pytorch/vision/blob/main/torchvision/datasets/folder.py
 # added support for classes_fraction and data_per_class_fraction
 
-import torch.distributed
 from torchvision.datasets import VisionDataset
 from PIL import Image
 
@@ -40,7 +39,6 @@ import os
 import os.path
 from typing import Any, Callable, cast, Dict, List, Optional, Tuple
 import numpy as np
-from megatron import print_rank_0
 
 def has_file_allowed_extension(filename: str, extensions: Tuple[str, ...]) -> bool:
     """Checks if a file is an allowed extension.
@@ -162,10 +160,6 @@ class DatasetFolder(VisionDataset):
                                     self.data_per_class_fraction,
                                     extensions,
                                     is_valid_file)
-        # print(f"loader: {loader}")
-        # print(f"samples: {samples}")
-        # raise KeyError("break")
-        
         if len(samples) == 0:
             msg = "Found 0 files in subfolders of: {}\n".format(self.root)
             if extensions is not None:
@@ -221,9 +215,8 @@ class DatasetFolder(VisionDataset):
         curr_index = index
         for x in range(self.total):
             try:
-                if not os.environ["DATA"] == "TOY":
-                    path, target = self.samples[curr_index]
-                    sample = self.loader(path)
+                path, target = self.samples[curr_index]
+                sample = self.loader(path)
                 break
             except Exception as e:
                 curr_index = np.random.randint(0, self.total)
@@ -251,14 +244,11 @@ def pil_loader(path: str) -> Image.Image:
 
 # TODO: specify the return type
 def accimage_loader(path: str) -> Any:
-    # raise KeyboardInterrupt("got here ")
     import accimage
     try:
-        print("trying to use accimage")
         return accimage.Image(path)
     except IOError:
         # Potentially a decoding problem, fall back to PIL.Image
-        print_rank_0("falling back to PIL")
         return pil_loader(path)
 
 

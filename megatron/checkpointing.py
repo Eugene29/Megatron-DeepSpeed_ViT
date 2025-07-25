@@ -294,8 +294,6 @@ def save_checkpoint(iteration, model, optimizer, opt_param_scheduler):
             original_state_dict = model[0].module.state_dict
             def state_dict_for_save_checkpoint_deepspeed(destination=None, prefix='', keep_vars=False):
                 return model[0].module.state_dict_for_save_checkpoint(prefix=prefix, keep_vars=keep_vars)
-            ## BUG: .module.state_dict became module.state_dict_for_save_checkpoint which calls .state_dict (itself?)
-            ##      Then, DeepSpeedEngine's module refers to VitClassificationModel?
             model[0].module.state_dict = state_dict_for_save_checkpoint_deepspeed
 
         # Saving is a collective communication

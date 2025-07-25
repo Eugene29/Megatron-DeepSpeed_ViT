@@ -670,8 +670,7 @@ def setup_model_and_optimizer(model_provider_func,
 
     return model, optimizer, opt_param_scheduler
 
-count = 0
-threshold = 5
+
 
 def train_step(forward_step_func, data_iterator,
                model, optimizer, opt_param_scheduler, config):
@@ -714,12 +713,6 @@ def train_step(forward_step_func, data_iterator,
     if args.timing_log_level < 2:
         config.timers = None
 
-
-    
-    import os
-    debug_mode = 'DEBUG_FNAME' in os.environ
-
-    if not debug_mode:
         losses_reduced = forward_backward_func(
             forward_step_func=forward_step_func,
             data_iterator=data_iterator,
@@ -729,45 +722,6 @@ def train_step(forward_step_func, data_iterator,
             micro_batch_size=args.micro_batch_size,
             decoder_seq_length=args.decoder_seq_length,
             forward_only=False)
-    else:
-        import megatron.core.parallel_state as mpu
-        seq_rank = mpu.get_sequence_parallel_rank()
-
-        torch.manual_seed(33333)
-        bs = 16
-        w_and_h = int(os.environ["IMG_W"])
-        # input_tensor = (torch.randn(bs, 3, w_and_h, w_and_h, dtype=torch.half, device=torch.xpu.current_device()), torch.tensor([1] * bs))
-        input_tensor = (torch.randn(bs, 3, w_and_h, w_and_h, dtype=torch.half, device=dist.get_local_rank()), torch.tensor([1] * bs))
-        losses_reduced = forward_backward_func(
-            forward_step_func=forward_step_func,
-            data_iterator=[iter([input_tensor])],
-            model=model,
-            num_microbatches=get_num_microbatches(),
-            seq_length=args.seq_length,
-            micro_batch_size=args.micro_batch_size,
-            decoder_seq_length=args.decoder_seq_length,
-            forward_only=False)
-
-        outputs, gradients, before_weights, after_weights = [], [], [], []
-        debug_fname = os.environ['DEBUG_FNAME']
-        with open(debug_fname, "a") as f:
-            # f.write(f"output: {output}\n")
-            f.write(f"\n\n\n\n[{seq_rank}] input tensor: {input_tensor}")
-            # f.write(f"\n\n\n\n[{seq_rank}] losses_reduced (from training.py): {losses_reduced}")
-            f.write(f"\n\n\n\n-------------------------------------------\n[{seq_rank}] Gradients:")
-
-            # if seq_rank == 0:
-            for name, param in model[0].named_parameters():
-                grad = deepspeed.utils.safe_get_full_grad(param)
-                f.write(f"\nname: {name}, param: {grad}")
-                gradients.append(grad)
-                before_weights.append(param)
-
-        # with open("debug/weights_SP.txt", "w") as f:
-        # # with open("debug/weights_DP.txt", "w") as f:
-        #     for name, param in model[0].named_parameters():
-        #         f.write(f"name: {name}, param: {param}")
-
 
     # reset timers if necessary
     if config.timers is None:
@@ -801,20 +755,6 @@ def train_step(forward_step_func, data_iterator,
     else:
         update_successful, grad_norm, num_zeros_in_grad = optimizer.step(args, timers)
     timers('optimizer').stop()
-
-    ## print gradient(make sure they are emptied and updated)
-    ## check the updated weights (should be identical to DP)
-    # if debug_mode:
-    #     with open(debug_fname, "a") as f:
-    #         f.write(f"\n\n\n\n-------------------------------------------\n[{seq_rank}] Gradients after step:")
-    #         for name, param in model[0].named_parameters():
-    #             grad = deepspeed.utils.safe_get_full_grad(param)
-    #             f.write(f"\nname: {name}, gradients (after step): {grad}, weights (after step): {param}")
-    #             after_weights.append(param)
-    #         max_memory = torch.xpu.max_memory_allocated()
-    #         f.write(f"\nmax_memory: {max_memory / (1024 ** 3)}")
-        
-    #     raise KeyboardInterrupt("Ran one batch of toy-dataset")
 
     # Gather params.
     if not args.deepspeed and update_successful:
@@ -1183,7 +1123,6 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             elapsed_time,
             total_iterations
         )
-
         samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
         tokens_per_sec = samples_per_sec * seq_len
         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
@@ -1458,23 +1397,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     update_rotary_pos_emb(curriculum_seqlen)
             args.curriculum_seqlen = curriculum_seqlen
         args.curr_iteration = iteration
-
-        if "DATA_PATH_LOG" in os.environ:
-            args = get_args()
-            if args.rank == 0:
-                with open(os.environ["DATA_PATH_LOG"], "a") as file:
-                    file.write("\n" + "#"*30 + f" iter {iteration} " + f"#"*30 + "\n")
-                    file.flush()
-            torch.distributed.barrier() ## For cleaner prints without race conditions. 
-            
-        if "TOY_DATALOG" in os.environ:
-            args = get_args()
-            if args.rank == 0:
-                with open(os.environ["TOY_DATALOG"], "a") as file:
-                    file.write("\n" + "#"*30 + f" iter {iteration} " + f"#"*30 + "\n")
-                    file.flush()
-            torch.distributed.barrier()
-
         loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
             train_step(forward_step_func,
                     train_data_iterator,
@@ -1482,7 +1404,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     optimizer,
                     opt_param_scheduler,
                     config)
-        
         iteration += 1
         args.iteration = iteration
         new_samples = mpu.get_data_parallel_world_size() * \

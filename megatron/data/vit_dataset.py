@@ -230,7 +230,6 @@ def build_train_valid_datasets(data_path, image_size=224):
 
     # training dataset
     train_data_path = data_path[0] if len(data_path) <= 2 else data_path[2]
-
     train_data = ImageFolder(
         root=train_data_path,
         transform=train_transform,

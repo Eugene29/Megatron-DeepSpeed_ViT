@@ -1,6 +1,0 @@
-[submodule "long-context-attention"]
-	path = long-context-attention
-	url = https://github.com/Eugene29/long-context-attention.git
-[submodule "DeepSpeed"]
-	path = DeepSpeed
-	url = https://github.com/Eugene29/DeepSpeed.git

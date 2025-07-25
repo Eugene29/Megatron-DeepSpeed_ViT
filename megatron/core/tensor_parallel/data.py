@@ -42,7 +42,7 @@ def _build_key_size_numel_dictionaries(keys, data, group=None, rank=-1, src_rank
     if rank == 0:
         offset = 0
         for key in keys:
-            assert data[key].dim() < max_dim, f'you should increase MAX_DATA_DIM {max_dim}'
+            assert data[key].dim() < max_dim, 'you should increase MAX_DATA_DIM'
             size = data[key].size()
             for i, s in enumerate(size):
                 sizes[i + offset] = s

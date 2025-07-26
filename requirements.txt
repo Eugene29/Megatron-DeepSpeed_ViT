@@ -57,7 +57,6 @@ evaluate==0.4.3
 exceptiongroup==1.2.2
 executing==2.2.0
 expecttest==0.3.0
-ezpz @ git+https://github.com/saforem2/ezpz.git@9a40fe27d8552a53ded8cb8aeb7b33ff77eaa60b
 fasteners==0.19
 fastremap==1.15.1
 filelock==3.18.0

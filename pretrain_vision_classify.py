@@ -1,6 +1,9 @@
 # Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain VIT"""
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+comm.Barrier()
 import deepspeed.comm as dist
 import torch
 import torch.nn.functional as F
@@ -192,6 +195,8 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
 
 if __name__ == "__main__":
+    os.environ["RANK"] = str(comm.Get_rank())
+    os.environ["WORLD_SIZE"] = str(comm.Get_size())
 
     pretrain(
         train_valid_test_datasets_provider,

@@ -2,7 +2,7 @@
 [[ -z $PBS_O_WORKDIR ]] && PBS_O_WORKDIR=$(dirname ${BASH_SOURCE[0]} | xargs realpath)
 echo PBS_O_WORKDIR: $PBS_O_WORKDIR
 cd $PBS_O_WORKDIR
-mkdir -p logs
+mkdir -p $PBS_O_WORKDIR/logs
 
 ################################ Global ARGUMENTS ################################
 num_node=$(wc -l < $PBS_NODEFILE)
@@ -21,6 +21,7 @@ export FA=1
 export MBS=1
 
 ################################# RUNS #################################
+export DATA=TOY;
 export VIT="315M";
 
 # export factor=64; # 4K sequence

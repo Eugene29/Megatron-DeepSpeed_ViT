@@ -1276,6 +1276,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             ZERO = "ZERO" + os.environ["ZERO"] + "_"
             ACT = "ACT_" if "ACT_CKPT" in os.environ else ""
             DATA = os.environ["DATA"]
+            SEQ = "_SEQ" + str(args.seq_length)
             
             if "USP_ulysses" in os.environ:
                 framework = "USP_ulysses"
@@ -1295,7 +1296,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                 packed = ""
 
             if rank < 1:
-                p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}_{framework}_{packed}{FA}{SP}rank{rank}.json")
+                p.export_chrome_trace(log_dir + f"{DATA}_WS{WS}{SEQ}_{framework}_{packed}{FA}{SP}rank{rank}.json")
 
         print_rank_0(f"PROFILING...")
         if torch.cuda.is_available():

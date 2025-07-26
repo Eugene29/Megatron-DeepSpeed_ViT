@@ -1348,25 +1348,21 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         )
 
     def num_floating_point_operations(args, batch_size):
-        if args.use_swin:
-            from megatron.model.vision.swin_backbone_alcf import swin_flop_count
-            return swin_flop_count(args)
-        else:
-            B = batch_size ## Global Batch Size
-            s = args.seq_length ## sequence length
-            h = args.hidden_size ## emb hidden dimension
-            h_ = args.ffn_hidden_size ## ffnn hidden dimension
-            l = args.num_layers ## num att. layer
-            p = args.patch_dim ## patch size
-            c = args.num_channels ## num channels
+        B = batch_size ## Global Batch Size
+        s = args.seq_length ## sequence length
+        h = args.hidden_size ## emb hidden dimension
+        h_ = args.ffn_hidden_size ## ffnn hidden dimension
+        l = args.num_layers ## num att. layer
+        p = args.patch_dim ## patch size
+        c = args.num_channels ## num channels
 
-            Att_computation = 4 * B * s**2 * h ## QK^T, (NxN) @ V
-            Lin_Transform = 8 * B * s * h**2 ## Q, K, V, O
-            MLP = 4 * B * s * h * h_ ## 2 Lin Transform
-            Lin_Embedding = 2 * B * s * p**2 * c * h ## (B s p^2*c) @ (p^2*c h)
-            ## Since num_classes << s * h, we can ignore num_classes.
+        Att_computation = 4 * B * s**2 * h ## QK^T, (NxN) @ V
+        Lin_Transform = 8 * B * s * h**2 ## Q, K, V, O
+        MLP = 4 * B * s * h * h_ ## 2 Lin Transform
+        Lin_Embedding = 2 * B * s * p**2 * c * h ## (B s p^2*c) @ (p^2*c h)
+        ## Since num_classes << s * h, we can ignore num_classes.
 
-            return 3 * (l*(Att_computation+Lin_Transform+MLP) + Lin_Embedding) ## x3 for fwd + bwd(2x)
+        return 3 * (l*(Att_computation+Lin_Transform+MLP) + Lin_Embedding) ## x3 for fwd + bwd(2x)
 
     ## Checkout Model parameters
     args = get_args()

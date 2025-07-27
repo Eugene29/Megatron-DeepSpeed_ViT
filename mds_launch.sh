@@ -28,13 +28,14 @@ get_machine() {
 
 setup_aurora_env_and_vars() {
     ## TODO: if hang is observed with num_node=1, conditionally remove cxi
+    module restore
     module load frameworks
     NHOSTS=$(wc -l < "${PBS_NODEFILE}")
     WANDB_PROJECT_NAME="AuroraViT"
-    . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
     FA_VERSION="--use-flash-attn-builder"
     NGPU_PER_HOST=12
     zero_overlap_comm=false
+    . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
 
     ## CCL Vars
     export CCL_KVS_MODE=mpi
@@ -189,6 +190,10 @@ setup_model_hyperparameter() {
 }
 
 setup_megatron_deepspeed_args() {
+    export drop_last_batch_with_GBS=1
+    export GLOBAL_MEAN_POOLING=1
+    export POS_ENCODING=1
+
     export SP=${SP:-1}
     export PP=${PP:-1}
     export TP=${TP:-1}

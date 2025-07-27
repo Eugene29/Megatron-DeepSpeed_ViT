@@ -454,7 +454,7 @@ TZ="America/Chicago" date
 # 1. Set MACHINE var
 get_machine
 
-# 2. Setup environment and env-specific variables
+# 2. Setup environment and cluster-specific variables
 if [[ $MACHINE == "aurora" ]]; then
     setup_aurora_env_and_vars
 elif [[ $MACHINE == "polaris" ]]; then
@@ -469,11 +469,11 @@ else
     # <activate your environment>
 fi
 
-# 3.set-up python args
+# 3. Set-up python args
 setup_model_hyperparameter
 setup_megatron_deepspeed_args
 
-# 4. get and launch run_cmd
+# 4. Launch run_cmd
 export MASTER_ADDR=$(hostname)
 export MASTER_PORT=$((RANDOM + 1024))
 run_cmd="mpiexec --verbose --envall -n ${NGPUS} -ppn ${NGPU_PER_HOST} \

@@ -40,7 +40,7 @@ cycler==0.12.1
 # Cython @ file:///home/conda/feedstock_root/build_artifacts/cython_1702977794498/work
 datasets==3.5.1
 decorator==5.2.1
-deepspeed==0.16.3 # observed to be faster than 0.16.7
+deepspeed==0.16.7
 deflate==0.8.0
 defusedxml==0.7.1
 dill==0.3.8

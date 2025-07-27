@@ -1,27 +1,17 @@
 ## Clone 
 ```
-  git clone --recursive https://github.com/Eugene29/Megatron-DeepSpeed_ViT.git  # Clone module & submodule
-```
-## Init Submodule
-```
-  cd Megatron-DeepSpeed_ViT
-  git submodule update --init --recursive  # Init & Update submodule
+  git clone https://github.com/Eugene29/Megatron-DeepSpeed_ViT.git
 ```
 
-## Main Script for Entry:
-Main script for entry is `mult_mds_aurora.sh` or `mult_mds_polaris.sh`. You'll need to modify `SCRIPT_DIR`. Environment variables not in the aforementioned entry script can be found and configured in `mds_launch.sh`. 
+## Entry Scripts
+To generally experiment with the repo, checkout `mult_exp.sh`.
 
-## For ALCF4 Benchmark:
-- Please run `mult_mds_polaris_alcf4.sh`
-- Environment variable `DATA_DIR` can be set to any existing filepath as it is just a placeholder when using a toy dataset (i.e. `DATA=TOY`). However, the placeholder is necessary to prevent an error.
-- Three places need code changes:
-  - Two `#### CUSTOMIZE HERE ####` in `mds_launch.sh`
-  - `SCRIPT_PTH` in `mult_mds_polaris_alcf4.sh`
-- Checkout `requirements.txt` for enviornment
+To run ALCF4 benchmark, checkout `alcf4_bench*.sh` scripts. 
 
-## POSSIBLE ENV VARIABLES
+If you are running outside of **Polaris** or **Aurora** cluster, customize cluster specific variables at `#### CUSTOMIZE HERE ####` in `mds_launch.sh`. To set-up environment from scratch, refer to `requirements.txt`.
+
+## List of Shorcut Variables to Set-up Megatron-DeepSpeed 
 ```
-DATA={TOY, CIFAR}           ## Use Toy dataset
 factor=int                  ## Represents image_dim/patch_dim of toy dataset to manipulate sequence length.
 NUM_ITERS=int               ## Num train iteration
 FA={0,1}                    ## Enable Flash Attention
@@ -35,25 +25,16 @@ MICS_SHARD_SIZE             ## Size of your MICS partition group (Needs custom D
 fp16                        ## enable fp16
 bf16                        ## use datatype bf16
 LOG_COMMS                   ## log/profile communications through deepspeed
-PROF_FLOPS                  ## profile flop counts with detail through deepspeed
-PROFILE={0,1}               ## Enable pytorch profiler. Trace is saved in your LOG_DIR.
+PROF_FLOPS                  ## profile flop counts with detail through ds-flops-profiler
+PROFILE={0,1}               ## profile through pytorch profiler.
 GBS=int                     ## global batch size
 MBS=int                     ## micro batch size
 POS_ENCODING={0,1}          ## Use positioanl encoding instead of positional embedding
 WANDB_MODE=disabled         ## Disable WANDB
-GLOBAL_MEAN_POOLING=1       ## Use Global mean pooling instead of clf token
-USP_ulysses=1, SP=          ## Turn on USP's Ulysses. Separately set SP degree
-USP_ring=1, SP=             ## Turn on USP's Ring Attention. Separately set SP degree
-USP_hybrid=(2,4)            ## TBD
-SIZE=int                    ## Restraint Number of GPU (ONLY WORKS ON 1-NODE)
+GLOBAL_MEAN_POOLING=1       ## Use Global mean pooling instead of clf token in VIT
 drop_last_batch_with_GBS=1  ## fixes the data order as long as GBS is matching.
 ################################ Notes ################################
 1. Pass either GBS or MBS
 2. Pass either fp16 or bf16
 3. Without ZERO3, only fp16 can be used (for now).
 ```
-
-## Environment
-For polaris cluster, base conda environment is sufficient while for aurora cluster, ezpz and deepspeed will additionally need to be installed. 
-
-For non-ALCF clusters, please checkout `requirements.txt`

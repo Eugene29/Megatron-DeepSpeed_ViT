@@ -31,7 +31,6 @@ setup_aurora_env_and_vars() {
     module load frameworks
     NHOSTS=$(wc -l < "${PBS_NODEFILE}")
     WANDB_PROJECT_NAME="AuroraViT"
-    DATA_DIR="/lus/flare/projects/Aurora_deployment/eku/data"
     . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
     FA_VERSION="--use-flash-attn-builder"
     NGPU_PER_HOST=12
@@ -77,7 +76,6 @@ setup_polaris_env_and_vars() {
     conda activate
     NHOSTS=$(wc -l < "${PBS_NODEFILE}")
     WANDB_PROJECT_NAME="PolarisViT"
-    DATA_DIR="/eagle/datascience/eku/data"
     FA_VERSION="--use-flash-attn-v2"
     NGPU_PER_HOST=4
     zero_overlap_comm=true
@@ -217,7 +215,6 @@ setup_megatron_deepspeed_args() {
     
     echo "TRAINING ON TOY DATASET"
     export DATA=TOY
-    DATA_PATH="$DATA_DIR $DATA_DIR" ## Dummy data path
     NUM_CLASSES=20
     PATCH_DIM=16
     factor=${factor:-54}
@@ -336,8 +333,6 @@ EOF
     export EVAL_ITERS="${EVAL_ITERS:-1000}"
     export LR_WARMUP_SAMPLES="${LR_WARMUP_SAMPLES:-250}"
     export EVAL_INTERVAL=${EVAL_INTERVAL:-250}
-    export DATA_PATH="${DATA_PATH}"
-    export DATA=$DATA
     export GBS=$GBS
     export MBS=$MBS
     export NUM_CLASSES=$NUM_CLASSES
@@ -424,7 +419,7 @@ EOF
     DATA_ARGS="
         --tokenizer-type NullTokenizer \
         --vocab-size 0 \
-        --data-path ${DATA_PATH} \
+        --data-path ${PBS_O_WORKDIR} ${PBS_O_WORKDIR} \
         --no-data-sharding \
         --split 949,50,1 \
         --eval-iters 0  
@@ -452,7 +447,7 @@ echo "Launching Megatron Deepspeed VIT."
 TZ="America/Chicago" date
 
 # 1. Set MACHINE var
-get_machine  
+get_machine
 
 # 2. Setup environment and env-specific variables
 if [[ $MACHINE == "aurora" ]]; then
@@ -463,7 +458,6 @@ else
     #### CUSTOMIZE HERE ####
     NGPU_PER_HOST="<number of GPUs per node>"
     NHOSTS="<number of nodes>"
-    DATA_DIR="<any existing filepath>"
     FA_VERSION="--use-flash-attn-v2"  # FA version
     zero_overlap_comm="<overlap for zero>"
     CPU_BIND="<cpu-bind for mpiexec>"

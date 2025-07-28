@@ -402,6 +402,7 @@ EOF
         --retro-encoder-hidden-dropout 0.0 \
         --no-masked-softmax-fusion \
         --no-bias-dropout-fusion \
+        --no-bias-gelu-fusion \
     "
 
     if [[ $FA -eq 1 ]]; then

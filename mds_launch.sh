@@ -130,7 +130,7 @@ setup_model_hyperparameter() {
         FFN_HSIZE=4096
         NUM_HEADS=16
     elif [[ $VIT == "315M" ]]; then
-        ## Ayrora friendly (head count is dividsible by 12)
+        ## Aurora friendly (head count is dividsible by 12)
         NLAYERS=14
         HSIZE=1536
         FFN_HSIZE=4096

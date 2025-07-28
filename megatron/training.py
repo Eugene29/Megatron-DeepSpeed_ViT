@@ -1529,7 +1529,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         log_dict = {
             "iteration": iteration,
             "time": step_time,
-            "LLM_TFLOPS": llm_tot_Tflops / step_time,
             "TFLOPS": tot_Tflops / step_time,
             "TFLOPS_per_gpu": Tflops_per_gpu / step_time,
             "samples_per_sec": samples_per_sec,
@@ -1545,7 +1544,6 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
         print_rank_0(f"iteration:{log_dict['iteration']} \t"
                      f"time:{log_dict['time']} \t"
-                     f"LLM_TFLOPS:{log_dict['LLM_TFLOPS']} \t"
                      f"TFLOPS:{log_dict['TFLOPS']} \t"
                      f"TFLOPS_per_gpu:{log_dict['TFLOPS_per_gpu']} \t"
                      f"Samples/Sec:{log_dict['samples_per_sec']} \t"

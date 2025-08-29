@@ -28,14 +28,14 @@ get_machine() {
 
 setup_aurora_env_and_vars() {
     ## TODO: if hang is observed with num_node=1, conditionally remove cxi
-    module restore
-    module load frameworks
+    #module restore
+    #module load frameworks
     NHOSTS=$(wc -l < "${PBS_NODEFILE}")
     WANDB_PROJECT_NAME="AuroraViT"
     FA_VERSION="--use-flash-attn-builder"
     NGPU_PER_HOST=12
     zero_overlap_comm=false
-    . /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
+    #. /lus/flare/projects/Aurora_deployment/eku/venv/vit/bin/activate
 
     ## CCL Vars
     export CCL_KVS_MODE=mpi
@@ -342,16 +342,15 @@ EOF
     export MBS=$MBS
     export NUM_CLASSES=$NUM_CLASSES
     export NUM_CHANNELS=$NUM_CHANNELS
-    export IMG_H="${IMG_H}"
-    export IMG_W="${IMG_W}"
-    export IMG_D="${IMG_D}"
+    export IMG_H="${IMG_H:-256}"
+    export IMG_W="${IMG_W:-256}"
+    export IMG_D="${IMG_D:-256}"
     export PATCH_DIM="${PATCH_DIM}"
     export LR="${LR:-1e-4}"
     export MIN_LR="${MIN_LR:-0.00001}"
     export NLAYERS="${NLAYERS}"
     export HSIZE="${HSIZE}"
     export NUM_HEADS="${NUM_HEADS}"
-
     if [[ $VIT3D ]]; then
         SEQ_LEN=$((IMG_H * IMG_W * IMG_D / PATCH_DIM**3))  
     else

@@ -17,6 +17,7 @@ export fp16=1
 export ZERO=1
 export MBS=1
 export FA=1
+export LOGDIR=$PBS_O_WORKDIR/logs
 
 # ------------------------------------------------------------------------------------ #
 # FOM RUNS
